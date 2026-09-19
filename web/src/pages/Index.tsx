@@ -4,6 +4,7 @@ import { ArrowRight, BarChart3, ChevronRight, Flame, Gem, Layers, ScanLine, Spar
 import Avatar from "@/components/Avatar";
 import CardArt from "@/components/CardArt";
 import PostCard from "@/components/PostCard";
+import VcaNewsTicker from "@/components/VcaNewsTicker";
 import { ACTIVITY, TRENDING } from "@/lib/data";
 import { useLiveCollectionValue } from "@/lib/prices";
 import { useVca } from "@/lib/store";
@@ -95,6 +96,9 @@ export default function Index() {
           </div>
         </div>
       </section>
+
+      {/* VCA NEWS — live official Pokemon TCG headlines */}
+      <VcaNewsTicker />
 
       {/* collection stats */}
       <section>
