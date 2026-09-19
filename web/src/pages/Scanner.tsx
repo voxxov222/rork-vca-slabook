@@ -379,7 +379,12 @@ export default function Scanner() {
   /* Re-anchor the identification on a verified real product record. */
   const applyCandidate = (c: RealCardCandidate) => {
     if (!outcome) return;
-    const catalogMatch = CATALOG.find((x) => x.tcgCardId === c.slug);
+    /* Match a catalog card by real product identity: name + card number. */
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const digits = (s: string) => (s.match(/\d+/g) ?? []).join("/");
+    const catalogMatch = CATALOG.find(
+      (x) => digits(x.number) === digits(c.number) && norm(x.name) === norm(c.name),
+    ) ?? CATALOG.find((x) => digits(x.number) === digits(c.number));
     setOutcome({
       ...outcome,
       analysis: {
@@ -397,7 +402,7 @@ export default function Scanner() {
   const card: CatalogCard | undefined = outcome?.analysis.matchedCardId
     ? cardById(outcome.analysis.matchedCardId)
     : undefined;
-  const { data: livePrices, isLoading: liveLoading } = useLivePrices(card?.tcgCardId);
+  const { data: livePrices, isLoading: liveLoading } = useLivePrices(card);
 
   /* ------------------------- SELECT ------------------------- */
   if (phase === "select") {

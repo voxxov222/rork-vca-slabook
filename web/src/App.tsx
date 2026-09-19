@@ -7,6 +7,7 @@ import AppShell from "@/components/AppShell";
 import { VcaProvider } from "@/lib/store";
 
 import CardDetail from "./pages/CardDetail";
+import AdminOS from "./pages/AdminOS";
 import Collection from "./pages/Collection";
 import Discover from "./pages/Discover";
 import Index from "./pages/Index";
@@ -45,6 +46,7 @@ const App = () => (
               <Route path="/profile" element={<Profile />} />
               <Route path="/collector/:userId" element={<Profile />} />
               <Route path="/card/:cardId" element={<CardDetail />} />
+              <Route path="/admin" element={<AdminOS />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Route>

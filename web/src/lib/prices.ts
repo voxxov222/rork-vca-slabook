@@ -2,20 +2,24 @@ import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { cardById } from "@/lib/data";
-import type { CollectionItem } from "@/lib/types";
+import type { CatalogCard, CollectionItem } from "@/lib/types";
 
 /**
- * Live market data services.
+ * Live market data services — REAL product, REAL prices.
  *
- * - JustTCG: real-time card prices (raw + graded) and price history
- * - PokeWallet: pokemon/card search index
- * - RapidAPI Pokedex: pokemon species stats for identification enrichment
+ * - pokemontcg.io v2: the real Pokémon TCG product database. Official artwork,
+ *   set data, rarity, and TCGPlayer raw market prices. Free, no key, CORS-open.
+ * - JustTCG v2: real graded market data (PSA 10/9/8) + price history, searched
+ *   by real product name/set/number.
+ * - PokeWallet: pokemon/card search index (enrichment)
+ * - RapidAPI Pokedex: species stats (enrichment)
  *
- * Keys come from Vite public env vars (VITE_*). When a key is missing or a
- * request fails, callers fall back to the bundled VCA Market Index data so
+ * Keys come from Vite public env vars (VITE_*). When a graded source is
+ * unavailable, callers fall back to the bundled VCA Market Index estimates so
  * the UI always renders something honest and labeled.
  */
 
+const PTCG_BASE = "https://api.pokemontcg.io/v2/cards";
 const JUSTTCG_BASE = "https://api.justtcg.com/v2/cards";
 const POKEWALLET_BASE = "https://api.pokewallet.io/search";
 const POKEDEX_HOST = "pokedex-api-pokemon-data-stats.p.rapidapi.com";
@@ -36,6 +40,9 @@ export interface LivePrices {
   source: string;
 }
 
+/** Minimal card descriptor the pricing engine needs. */
+export type PriceCard = Pick<CatalogCard, "id" | "name" | "number" | "set" | "tcgCardId">;
+
 interface JtcMarket {
   region: string;
   currency: string;
@@ -52,6 +59,33 @@ interface JtcVariant {
   markets?: JtcMarket[];
 }
 
+interface JtcCardRow {
+  name?: string;
+  number?: string;
+  rarity?: string;
+  set?: { id?: string; name?: string };
+  variants?: JtcVariant[];
+}
+
+/* ------------------------------- pokemontcg.io ------------------------------ */
+
+interface PtcgPrice {
+  low?: number;
+  mid?: number;
+  high?: number;
+  market?: number;
+  directLow?: number;
+}
+
+interface PtcgCard {
+  id: string;
+  name: string;
+  number: string;
+  rarity?: string;
+  set?: { id: string; name: string; releaseDate?: string };
+  tcgplayer?: { prices?: Record<string, PtcgPrice> };
+}
+
 async function fetchJson<T>(url: string, headers: Record<string, string>, timeoutMs = 12000): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -64,6 +98,26 @@ async function fetchJson<T>(url: string, headers: Record<string, string>, timeou
   }
 }
 
+/** Real TCGPlayer raw market price for a pokemontcg.io card id (no key needed). */
+export async function fetchPokeTcgRaw(ptcgId: string): Promise<{ raw: number; updatedAt: string } | null> {
+  if (!ptcgId) return null;
+  const json = await fetchJson<{ data?: PtcgCard[] }>(
+    `${PTCG_BASE}?id=${encodeURIComponent(ptcgId)}&pageSize=1`,
+    {},
+    10000,
+  );
+  const card = json?.data?.[0];
+  const prices = card?.tcgplayer?.prices;
+  if (!card || !prices) return null;
+  const entry =
+    prices.holofoil ?? prices.normal ?? prices.reverseHolofoil ?? Object.values(prices)[0];
+  const raw = entry?.market ?? entry?.mid;
+  if (!raw || !Number.isFinite(raw)) return null;
+  return { raw, updatedAt: card.set?.releaseDate ?? "today" };
+}
+
+/* --------------------------------- JustTCG --------------------------------- */
+
 const usdMarket = (v: JtcVariant): JtcMarket | undefined =>
   v.markets?.find((m) => m.currency === "USD") ?? v.markets?.[0];
 
@@ -75,57 +129,124 @@ const gradedPrice = (variants: JtcVariant[], grade: string): number => {
   return pick ? usdMarket(pick)!.price : Number.NaN;
 };
 
-/** Fetches live prices for a JustTCG card slug. Returns null when no usable data. */
-export async function fetchLivePrices(tcgCardId: string): Promise<LivePrices | null> {
-  if (!justTcgKey || !tcgCardId) return null;
-  const json = await fetchJson<{ data?: { variants?: JtcVariant[] }[] }>(
-    `${JUSTTCG_BASE}?card_id=${encodeURIComponent(tcgCardId)}&graded=include`,
-    { "x-api-key": justTcgKey },
-  );
-  const variants = json?.data?.[0]?.variants ?? [];
-  if (!variants.length) return null;
+const digitsOf = (s: string) => (s.match(/\d+/)?.[0] ?? "");
+const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-  const rawVariants = variants.filter((v) => v.type === "raw" && usdMarket(v));
-  const nm =
-    rawVariants.find((v) => v.condition === "Near Mint") ??
-    rawVariants.find((v) => v.condition === "Lightly Played");
-  const raw = nm
-    ? usdMarket(nm)!.price
-    : rawVariants.length
-      ? rawVariants.reduce((sum, v) => sum + (usdMarket(v)?.price ?? 0), 0) / rawVariants.length
-      : Number.NaN;
+const kebab = (s: string) =>
+  s.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
-  const g10 = gradedPrice(variants, "10");
-  const g9 = gradedPrice(variants, "9");
-  const g8 = gradedPrice(variants, "8");
+interface JtcGradedResult {
+  raw: number;
+  g10: number;
+  g9: number;
+  g8: number;
+  history: { t: number; p: number }[];
+  updatedAt: string;
+}
+
+/** Searches JustTCG v2 by real product name + set + number for graded PSA prices. */
+async function fetchJustTcgGraded(card: PriceCard): Promise<JtcGradedResult | null> {
+  if (!justTcgKey) return null;
+  const num = digitsOf(card.number);
+  const setSlug = kebab(card.set);
+  // JustTCG set ids carry a game suffix, e.g. "base-set-pokemon".
+  const attempts = [`${setSlug}-pokemon`, setSlug];
+  for (const slug of attempts) {
+    try {
+      const json = await fetchJson<{ data?: JtcCardRow[] }>(
+        `${JUSTTCG_BASE}?game=pokemon&name=${encodeURIComponent(card.name)}&set=${encodeURIComponent(slug)}&graded=include`,
+        { "x-api-key": justTcgKey },
+        14000,
+      );
+      const rows = json?.data ?? [];
+      const row =
+        rows.find((r) => digitsOf(String(r.number ?? "")) === num && normName(String(r.name ?? "")) === normName(card.name)) ??
+        rows.find((r) => digitsOf(String(r.number ?? "")) === num) ??
+        rows.find((r) => normName(String(r.name ?? "")) === normName(card.name)) ??
+        rows[0];
+      const variants = row?.variants ?? [];
+      if (!variants.length) continue;
+
+      const rawVariants = variants.filter((v) => v.type === "raw" && usdMarket(v));
+      const nm =
+        rawVariants.find((v) => v.condition === "Near Mint") ??
+        rawVariants.find((v) => v.condition === "Lightly Played");
+      const raw = nm
+        ? usdMarket(nm)!.price
+        : rawVariants.length
+          ? rawVariants.reduce((sum, v) => sum + (usdMarket(v)?.price ?? 0), 0) / rawVariants.length
+          : Number.NaN;
+
+      const g10 = gradedPrice(variants, "10");
+      const g9 = gradedPrice(variants, "9");
+      const g8 = gradedPrice(variants, "8");
+      if (!Number.isFinite(raw) && !Number.isFinite(g10)) continue;
+
+      const historyVariant =
+        variants.find(
+          (v) =>
+            v.type === "graded" &&
+            String(v.grading?.grade ?? "") === "10" &&
+            (usdMarket(v)?.price_history?.length ?? 0) > 1,
+        ) ??
+        nm ??
+        rawVariants[0] ??
+        variants[0];
+      const history = (usdMarket(historyVariant)?.price_history ?? []).slice(-30);
+
+      const ts = usdMarket(historyVariant)?.updated_at;
+      const updatedAt = ts
+        ? new Date(ts * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        : "today";
+
+      return { raw, g10, g9, g8, history, updatedAt };
+    } catch {
+      // try the next set-slug variant
+    }
+  }
+  return null;
+}
+
+/**
+ * Fetches live prices for a real card: raw TCGPlayer market from
+ * pokemontcg.io, graded PSA 10/9/8 from JustTCG. Returns null when neither
+ * source has usable data.
+ */
+export async function fetchLivePrices(card: PriceCard | undefined): Promise<LivePrices | null> {
+  if (!card) return null;
+  const [ptcg, jtc] = await Promise.all([
+    fetchPokeTcgRaw(card.tcgCardId).catch(() => null),
+    justTcgKey ? fetchJustTcgGraded(card).catch(() => null) : Promise.resolve(null),
+  ]);
+
+  const raw = ptcg?.raw ?? (jtc ? jtc.raw : Number.NaN);
+  const g10 = jtc ? jtc.g10 : Number.NaN;
+  const g9 = jtc ? jtc.g9 : Number.NaN;
+  const g8 = jtc ? jtc.g8 : Number.NaN;
   if (!Number.isFinite(raw) && !Number.isFinite(g10)) return null;
 
-  const historyVariant =
-    variants.find(
-      (v) =>
-        v.type === "graded" &&
-        String(v.grading?.grade ?? "") === "10" &&
-        (usdMarket(v)?.price_history?.length ?? 0) > 1,
-    ) ??
-    nm ??
-    rawVariants[0] ??
-    variants[0];
-  const history = (usdMarket(historyVariant)?.price_history ?? []).slice(-30);
+  const sources = [ptcg ? "pokemontcg.io · TCGPlayer market" : null, jtc ? "JustTCG graded market" : null].filter(
+    (s): s is string => Boolean(s),
+  );
+  const updatedAt = jtc?.updatedAt ?? ptcg?.updatedAt ?? "today";
 
-  const ts = usdMarket(historyVariant)?.updated_at;
-  const updatedAt = ts
-    ? new Date(ts * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    : "today";
-
-  return { raw, g10, g9, g8, history, updatedAt, source: "JustTCG live market data" };
+  return {
+    raw,
+    g10,
+    g9,
+    g8,
+    history: jtc?.history ?? [],
+    updatedAt,
+    source: sources.join(" + ") || "VCA Market Index",
+  };
 }
 
 /** React Query hook — live prices with 5-minute staleness, falls back to null on failure. */
-export function useLivePrices(tcgCardId: string | undefined) {
+export function useLivePrices(card: CatalogCard | undefined) {
   return useQuery({
-    queryKey: ["justtcg", tcgCardId],
-    queryFn: () => fetchLivePrices(tcgCardId!),
-    enabled: Boolean(justTcgKey && tcgCardId),
+    queryKey: ["liveprices", card?.id],
+    queryFn: () => fetchLivePrices(card),
+    enabled: Boolean(card),
     staleTime: 5 * 60 * 1000,
     retry: 1,
   });
@@ -163,20 +284,8 @@ export interface RealCardCandidate {
   psa10: number | null;
 }
 
-interface JtcCardRow {
-  slug?: string;
-  name?: string;
-  number?: string;
-  rarity?: string;
-  set?: { id?: string; name?: string };
-  variants?: JtcVariant[];
-}
-
 const realCache = new Map<string, { at: number; cards: RealCardCandidate[] }>();
 const REAL_TTL = 10 * 60 * 1000;
-
-const kebab = (s: string) =>
-  s.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 const realPrice = (variants: JtcVariant[], kind: "raw" | "psa10"): number | null => {
   if (kind === "psa10") {
@@ -189,7 +298,7 @@ const realPrice = (variants: JtcVariant[], kind: "raw" | "psa10"): number | null
 };
 
 const toCandidate = (c: JtcCardRow): RealCardCandidate => ({
-  slug: String(c.slug ?? ""),
+  slug: String(c.number ?? c.name ?? ""),
   name: String(c.name ?? "").trim(),
   setName: String(c.set?.name ?? "").trim(),
   number: String(c.number ?? "").trim(),
@@ -230,10 +339,9 @@ export async function searchRealCards(setName: string, cardName: string): Promis
     realCache.set(setSlug, { at: Date.now(), cards });
   }
   if (!cards.length) return [];
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const target = norm(cardName);
+  const target = normName(cardName);
   return cards.filter((c) => {
-    const cn = norm(c.name);
+    const cn = normName(c.name);
     return cn.includes(target) || target.includes(cn);
   });
 }
@@ -249,31 +357,33 @@ export function pickRealMatch(
   const numNorm = digits(number);
   const byNumber = numNorm ? candidates.find((c) => digits(c.number) === numNorm) : undefined;
   if (byNumber) return byNumber;
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return candidates.find((c) => norm(c.name) === norm(name)) ?? candidates[0];
+  return candidates.find((c) => normName(c.name) === normName(name)) ?? candidates[0];
 }
 
 /**
- * Collection value across grades: sums live JustTCG prices where available
- * and falls back to the bundled VCA Market Index per item.
+ * Collection value across grades: sums live prices where available
+ * (pokemontcg.io raw + JustTCG graded) and falls back to the bundled VCA
+ * Market Index per item.
  */
 export function useLiveCollectionValue(items: CollectionItem[]) {
-  const slugs = useMemo(
-    () =>
-      Array.from(
-        new Set(items.map((i) => cardById(i.cardId)?.tcgCardId).filter((s): s is string => Boolean(s))),
-      ),
-    [items],
-  );
+  const cards = useMemo(() => {
+    const seen = new Map<string, CatalogCard>();
+    for (const item of items) {
+      const card = cardById(item.cardId);
+      if (card) seen.set(card.id, card);
+    }
+    return Array.from(seen.values());
+  }, [items]);
+
   const queries = useQueries({
-    queries: slugs.map((slug) => ({
-      queryKey: ["justtcg", slug],
-      queryFn: () => fetchLivePrices(slug),
-      enabled: Boolean(justTcgKey),
+    queries: cards.map((card) => ({
+      queryKey: ["liveprices", card.id],
+      queryFn: () => fetchLivePrices(card),
       staleTime: 5 * 60 * 1000,
       retry: 1,
     })),
   });
+
   return useMemo(() => {
     let total = 0;
     let liveCount = 0;
@@ -282,12 +392,12 @@ export function useLiveCollectionValue(items: CollectionItem[]) {
       if (!card) continue;
       const key =
         item.grade === "VCA 10" ? "g10" : item.grade === "VCA 9" ? "g9" : item.grade === "VCA 8" ? "g8" : "raw";
-      const idx = slugs.indexOf(card.tcgCardId);
+      const idx = cards.findIndex((c) => c.id === card.id);
       const live = idx >= 0 ? queries[idx]?.data : undefined;
       const price = live && Number.isFinite(live[key]) ? live[key] : card.prices[key];
       if (live && Number.isFinite(live[key])) liveCount += 1;
       total += price;
     }
-    return { total, liveCount, isLive: liveCount > 0 && Boolean(justTcgKey) };
-  }, [items, slugs, queries]);
+    return { total, liveCount, isLive: liveCount > 0 };
+  }, [items, cards, queries]);
 }

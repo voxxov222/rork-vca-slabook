@@ -23,7 +23,7 @@ const KIND_STYLE: Record<Post["kind"], string> = {
 };
 
 export default function PostCard({ post }: { post: Post }) {
-  const { userById, cardById, toggleLike, toggleSave, addComment, sharePost, currentUser } = useVca();
+  const { userById, cardById, toggleLike, toggleSave, addComment, sharePost, currentUser, follows, toggleFollow } = useVca();
   const [showComments, setShowComments] = useState(false);
   const [draft, setDraft] = useState("");
 
@@ -48,6 +48,20 @@ export default function PostCard({ post }: { post: Post }) {
             @{author.username} · {post.time}
           </p>
         </div>
+        {/* OSSN-style friend graph: follow from any post */}
+        {!author.isSelf && (
+          <button
+            onClick={() => toggleFollow(author.id)}
+            className={cn(
+              "mr-1 shrink-0 rounded-full border px-2.5 py-1 text-[9px] font-bold tracking-wider transition-all active:scale-95",
+              follows[author.id]
+                ? "border-holo-cyan/50 bg-holo-cyan/15 text-holo-cyan"
+                : "border-white/20 bg-white/5 text-white/60 hover:border-holo-cyan/40 hover:text-holo-cyan",
+            )}
+          >
+            {follows[author.id] ? "FOLLOWING" : "+ FOLLOW"}
+          </button>
+        )}
         <span className={cn("shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9px] font-bold tracking-wider", KIND_STYLE[post.kind])}>
           {KIND_LABEL[post.kind]}
         </span>

@@ -14,6 +14,7 @@ import {
   Search,
   Sparkles,
   Store,
+  Terminal,
   ThumbsUp,
   User as UserIcon,
 } from "lucide-react";
@@ -33,6 +34,7 @@ const NAV = [
   { to: "/marketplace", label: "Marketplace", icon: Store },
   { to: "/messenger", label: "Messenger", icon: MessageCircle },
   { to: "/profile", label: "Profile", icon: UserIcon },
+  { to: "/admin", label: "VCA OS", icon: Terminal },
 ];
 
 const MOBILE_NAV = [

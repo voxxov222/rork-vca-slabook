@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, BadgeCheck, Gem, Layers, MessageSquareShare, ScanLine, ShieldCheck, Sparkles } from "lucide-react";
 
 import CardArt from "@/components/CardArt";
+import GradeRoiPanel from "@/components/GradeRoiPanel";
 import PostCard from "@/components/PostCard";
 import PriceHistory from "@/components/PriceHistory";
 import PriceLadder from "@/components/PriceLadder";
@@ -27,7 +28,7 @@ export default function CardDetail() {
     pushNotification,
   } = useVca();
   const card = cardId ? cardById(cardId) : undefined;
-  const { data: livePrices, isLoading: liveLoading } = useLivePrices(card?.tcgCardId);
+  const { data: livePrices, isLoading: liveLoading } = useLivePrices(card);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareText, setShareText] = useState("");
 
@@ -170,6 +171,9 @@ export default function CardDetail() {
         <PriceLadder card={card} live={livePrices ?? null} loading={liveLoading} />
         <PriceHistory card={card} live={livePrices ?? null} />
       </div>
+
+      {/* should I slab? — grading ROI engine */}
+      <GradeRoiPanel card={card} live={livePrices ?? null} />
 
       {/* social */}
       <section>

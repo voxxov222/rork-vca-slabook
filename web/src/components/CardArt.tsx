@@ -11,6 +11,9 @@ const TYPE_STYLE: Record<CatalogCard["type"], { glow: string; chip: string; aura
   Grass: { glow: "rgba(80,220,120,0.4)", chip: "bg-emerald-500/20 text-emerald-300 border-emerald-400/30", aura: "from-emerald-500/30" },
   Electric: { glow: "rgba(255,210,60,0.45)", chip: "bg-yellow-500/20 text-yellow-200 border-yellow-400/30", aura: "from-yellow-400/30" },
   Psychic: { glow: "rgba(190,110,255,0.45)", chip: "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-400/30", aura: "from-fuchsia-500/30" },
+  Fighting: { glow: "rgba(230,145,60,0.45)", chip: "bg-amber-600/20 text-amber-300 border-amber-500/30", aura: "from-amber-600/30" },
+  Darkness: { glow: "rgba(110,80,200,0.5)", chip: "bg-violet-900/30 text-violet-300 border-violet-500/30", aura: "from-violet-800/40" },
+  Colorless: { glow: "rgba(210,210,225,0.4)", chip: "bg-zinc-500/20 text-zinc-200 border-zinc-400/30", aura: "from-zinc-400/30" },
 };
 
 /** Max rotation (deg) on pointer hover. */

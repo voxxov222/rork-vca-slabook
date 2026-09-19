@@ -4,7 +4,15 @@ export type SlabStatus = "none" | "digital" | "physical" | "grading";
 
 export type AuthStatus = "verified" | "unverified" | "flagged";
 
-export type Rarity = "Common" | "Uncommon" | "Rare" | "Holo Rare";
+export type Rarity =
+  | "Common"
+  | "Uncommon"
+  | "Rare"
+  | "Holo Rare"
+  | "Rare Holo V"
+  | "Rare Holo VMAX"
+  | "Rare Holo ex"
+  | "Rare Rainbow";
 
 export interface PricePoint {
   raw: number;
@@ -23,10 +31,19 @@ export interface CatalogCard {
   year: number;
   language: string;
   variant: string;
-  type: "Fire" | "Water" | "Grass" | "Electric" | "Psychic";
+  /** Pokémon energy type. */
+  type:
+    | "Fire"
+    | "Water"
+    | "Grass"
+    | "Electric"
+    | "Psychic"
+    | "Fighting"
+    | "Darkness"
+    | "Colorless";
   artKey: string;
   artUrl: string;
-  /** JustTCG card slug for live market pricing (e.g. "pokemon-base-set-charizard-holo-rare"). */
+  /** Real-product key: pokemontcg.io card id (e.g. "base1-4") used for live catalog pricing. */
   tcgCardId: string;
   prices: PricePoint;
   priceDate: string;

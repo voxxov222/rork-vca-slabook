@@ -73,6 +73,8 @@ interface VcaStore {
   createDigitalSlab: (cardId: string, grade?: GradeLabel | null) => SlabRecord;
   sendToGrading: (cardId: string) => SlabRecord;
   activatePhysicalSlab: (recordId: string) => void;
+  /** Admin OS: certify a physical slab in the grading queue. */
+  gradeSlab: (recordId: string, grade: GradeLabel) => void;
   /* social */
   addPost: (text: string, card?: { cardId: string; serial?: string | null; grade?: GradeLabel | null; caption?: string }) => void;
   toggleLike: (postId: string) => void;
@@ -296,6 +298,39 @@ export function VcaProvider({ children }: { children: ReactNode }) {
       pushNotification({ kind: "nfc", text: "NFC slab activated — tap any phone to open the digital profile" });
     },
     [pushNotification, slabs],
+  );
+
+  /* Admin OS: certify a physical slab — sets the grade, activates the item,
+     syncs the vault table and notifies the owner. */
+  const gradeSlab = useCallback(
+    (recordId: string, grade: GradeLabel) => {
+      const record = slabs.find((s) => s.id === recordId);
+      if (!record) return;
+      setSlabs((prev) => prev.map((s) => (s.id === recordId ? { ...s, grade } : s)));
+      if (record.itemId) {
+        setCollection((prev) =>
+          prev.map((i) =>
+            i.id === record.itemId ? { ...i, grade, slab: "physical" as SlabStatus, serial: record.serial } : i,
+          ),
+        );
+      }
+      const c = cardById(record.cardId);
+      void upsertVaultSlab({
+        clientId: record.id,
+        serial: record.serial,
+        kind: "physical",
+        cardId: record.cardId,
+        cardName: c?.name ?? "Unknown",
+        cardSet: c?.set ?? null,
+        cardArt: c?.artUrl ?? null,
+        grade,
+        value: slabValue(c, grade),
+        ownerName: record.ownerName,
+        mintedAt: new Date().toISOString(),
+      });
+      pushNotification({ kind: "grade", text: `${c?.name ?? "Card"} certified ${grade} — physical NFC slab ${record.serial} activated.`, cardId: record.cardId });
+    },
+    [slabs, cardById, pushNotification],
   );
 
   const addPost = useCallback(
@@ -599,6 +634,7 @@ export function VcaProvider({ children }: { children: ReactNode }) {
     createDigitalSlab,
     sendToGrading,
     activatePhysicalSlab,
+    gradeSlab,
     addPost,
     toggleLike,
     toggleSave,
