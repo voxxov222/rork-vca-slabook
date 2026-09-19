@@ -116,6 +116,10 @@ export default {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.82" },
         },
+        "ticker-scroll": {
+          from: { transform: "translateX(0)" },
+          to: { transform: "translateX(-50%)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -129,6 +133,7 @@ export default {
         twinkle: "twinkle 3s ease-in-out infinite",
         "fade-up": "fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both",
         "scan-flicker": "scan-flicker 0.5s linear infinite",
+        ticker: "ticker-scroll 48s linear infinite",
       },
     },
   },

@@ -6,6 +6,7 @@ import {
   Camera,
   CameraOff,
   CheckCircle2,
+  Database,
   Fingerprint,
   Gem,
   Image as ImageIcon,
@@ -22,6 +23,7 @@ import PriceHistory from "@/components/PriceHistory";
 import PriceLadder from "@/components/PriceLadder";
 import RarityBadge, { rarityFor } from "@/components/RarityBadge";
 import { CATALOG, cardById } from "@/lib/data";
+import { pickRealMatch, searchRealCards, type RealCardCandidate } from "@/lib/prices";
 import { useLivePrices } from "@/lib/prices";
 import { useVca } from "@/lib/store";
 import type { CatalogCard } from "@/lib/types";
@@ -36,6 +38,12 @@ import {
 
 type Phase = "select" | "camera" | "scanning" | "result" | "fail";
 type StampStyle = "pass" | "fake" | "review";
+
+interface RealState {
+  status: "loading" | "ready";
+  candidates: RealCardCandidate[];
+  match: RealCardCandidate | null;
+}
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -262,9 +270,10 @@ function CameraCapture({ onCapture, onCancel }: { onCapture: (dataUrl: string) =
 
 export default function Scanner() {
   const navigate = useNavigate();
-  const { addToCollection, createDigitalSlab, sendToGrading, setLastScan, pushNotification } = useVca();
+  const { addToCollection, createDigitalSlab, sendToGrading, setLastScan, pushNotification, recordScan } = useVca();
   const [phase, setPhase] = useState<Phase>("select");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [real, setReal] = useState<RealState | null>(null);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [progress, setProgress] = useState(0);
   const [step, setStep] = useState(0);
@@ -323,6 +332,31 @@ export default function Scanner() {
       if (progressRef.current) window.clearInterval(progressRef.current);
       setProgress(100);
       setOutcome({ analysis, preview: opts.preview ?? null });
+
+      /* Cross-check the AI identification against the real product database
+         (JustTCG) so only genuine product records get a verified badge. */
+      setReal({ status: "loading", candidates: [], match: null });
+      void (async () => {
+        let candidates: RealCardCandidate[] = [];
+        try {
+          candidates = await searchRealCards(analysis.setName, analysis.name);
+        } catch {
+          candidates = [];
+        }
+        const match = pickRealMatch(candidates, analysis.number, analysis.name);
+        setReal({ status: "ready", candidates, match });
+        recordScan({
+          cardName: analysis.name,
+          setName: analysis.setName,
+          number: analysis.number,
+          rarity: analysis.rarity,
+          verdict: analysis.verdict,
+          confidence: analysis.confidence,
+          matchedCardId: analysis.matchedCardId,
+          verifiedProduct: Boolean(match),
+        });
+      })();
+
       setLastScan({
         cardId: analysis.matchedCardId ?? "unknown",
         passed: analysis.verdict === "authentic",
@@ -332,13 +366,32 @@ export default function Scanner() {
       });
       setPhase(analysis.verdict === "authentic" ? "result" : "fail");
     },
-    [setLastScan],
+    [recordScan, setLastScan],
   );
 
   const reset = () => {
     setOutcome(null);
+    setReal(null);
     setReviewSubmitted(false);
     setPhase("select");
+  };
+
+  /* Re-anchor the identification on a verified real product record. */
+  const applyCandidate = (c: RealCardCandidate) => {
+    if (!outcome) return;
+    const catalogMatch = CATALOG.find((x) => x.tcgCardId === c.slug);
+    setOutcome({
+      ...outcome,
+      analysis: {
+        ...outcome.analysis,
+        name: c.name,
+        setName: c.setName,
+        number: c.number,
+        rarity: c.rarity || outcome.analysis.rarity,
+        matchedCardId: catalogMatch?.id ?? outcome.analysis.matchedCardId,
+      },
+    });
+    setReal((r) => (r ? { ...r, match: c } : r));
   };
 
   const card: CatalogCard | undefined = outcome?.analysis.matchedCardId
@@ -671,6 +724,9 @@ export default function Scanner() {
         </div>
       </div>
 
+      {/* real product verification */}
+      <RealProductPanel real={real} onPick={applyCandidate} />
+
       {/* price engine (only when matched to catalog) */}
       {card ? (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -723,6 +779,98 @@ export default function Scanner() {
               <span className="text-xs font-bold text-white">SEND TO VCA FOR GRADING</span>
               <span className="text-[10px] text-white/40">Physical NFC slab</span>
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* Real product verification (JustTCG live database)                */
+/* ---------------------------------------------------------------- */
+
+const usd = (n: number | null) =>
+  n === null || !Number.isFinite(n) ? "—" : `$${n.toLocaleString("en-US")}`;
+
+function RealProductPanel({ real, onPick }: { real: RealState | null; onPick: (c: RealCardCandidate) => void }) {
+  if (!real) return null;
+
+  if (real.status === "loading") {
+    return (
+      <div className="glass flex items-center gap-2.5 rounded-2xl p-3.5">
+        <Database className="h-4 w-4 animate-pulse text-holo-cyan" />
+        <p className="font-mono text-[10px] tracking-wider text-holo-cyan">
+          CROSS-CHECKING IDENTIFICATION AGAINST THE REAL PRODUCT DATABASE…
+        </p>
+      </div>
+    );
+  }
+
+  const m = real.match;
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border p-4",
+        m ? "border-holo-mint/30 bg-holo-mint/6" : "border-holo-gold/35 bg-holo-gold/8",
+      )}
+    >
+      <div className="flex items-center gap-2.5">
+        {m ? (
+          <BadgeCheck className="h-5 w-5 shrink-0 text-holo-mint" />
+        ) : (
+          <AlertTriangle className="h-5 w-5 shrink-0 text-holo-gold" />
+        )}
+        <div>
+          <p className={cn("font-display text-sm font-extrabold tracking-wide", m ? "text-holo-mint" : "text-holo-gold")}>
+            {m ? "VERIFIED REAL PRODUCT" : "NOT IN REAL PRODUCT DATABASE"}
+          </p>
+          <p className="text-[11px] text-white/45">
+            {m
+              ? "Identification confirmed against the live JustTCG product record."
+              : "No real product matched this identification — treat it as unconfirmed before buying or trading."}
+          </p>
+        </div>
+      </div>
+
+      {m && (
+        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+          {(
+            [
+              ["Product", m.name],
+              ["Set", m.setName],
+              ["Number", m.number],
+              ["Rarity", m.rarity || "—"],
+              ["Raw (NM)", usd(m.raw)],
+              ["PSA 10", usd(m.psa10)],
+            ] as const
+          ).map(([k, v]) => (
+            <div key={k}>
+              <p className="text-[9px] font-bold uppercase tracking-wider text-white/35">{k}</p>
+              <p className="font-semibold text-white/85">{v}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {real.candidates.length > 1 && (
+        <div className="mt-3">
+          <p className="font-mono text-[9px] tracking-wider text-white/40">NOT RIGHT? PICK THE EXACT CARD:</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {real.candidates.slice(0, 6).map((c) => (
+              <button
+                key={c.slug}
+                onClick={() => onPick(c)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[10px] font-bold transition-all active:scale-95",
+                  m?.slug === c.slug
+                    ? "border-holo-mint/50 bg-holo-mint/15 text-holo-mint"
+                    : "border-white/15 bg-white/5 text-white/65 hover:border-holo-cyan/40 hover:text-holo-cyan",
+                )}
+              >
+                {c.name} · {c.number}
+              </button>
+            ))}
           </div>
         </div>
       )}

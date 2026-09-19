@@ -150,6 +150,109 @@ export async function fetchPokemonStats(name: string): Promise<unknown | null> {
 
 export const hasLivePricing = () => Boolean(justTcgKey);
 
+/* ---------------------- real product verification ---------------------- */
+
+/** A real product record from the JustTCG database (verified card data). */
+export interface RealCardCandidate {
+  slug: string;
+  name: string;
+  setName: string;
+  number: string;
+  rarity: string;
+  raw: number | null;
+  psa10: number | null;
+}
+
+interface JtcCardRow {
+  slug?: string;
+  name?: string;
+  number?: string;
+  rarity?: string;
+  set?: { id?: string; name?: string };
+  variants?: JtcVariant[];
+}
+
+const realCache = new Map<string, { at: number; cards: RealCardCandidate[] }>();
+const REAL_TTL = 10 * 60 * 1000;
+
+const kebab = (s: string) =>
+  s.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+const realPrice = (variants: JtcVariant[], kind: "raw" | "psa10"): number | null => {
+  if (kind === "psa10") {
+    const g = gradedPrice(variants, "10");
+    return Number.isFinite(g) ? g : null;
+  }
+  const rawVariants = variants.filter((v) => v.type === "raw" && usdMarket(v));
+  const nm = rawVariants.find((v) => v.condition === "Near Mint") ?? rawVariants[0];
+  return nm ? usdMarket(nm)!.price : null;
+};
+
+const toCandidate = (c: JtcCardRow): RealCardCandidate => ({
+  slug: String(c.slug ?? ""),
+  name: String(c.name ?? "").trim(),
+  setName: String(c.set?.name ?? "").trim(),
+  number: String(c.number ?? "").trim(),
+  rarity: String(c.rarity ?? "").trim(),
+  raw: realPrice(c.variants ?? [], "raw"),
+  psa10: realPrice(c.variants ?? [], "psa10"),
+});
+
+/**
+ * Verifies an AI identification against the real product database (JustTCG).
+ * Browses the identified set and fuzzy-matches by card name, so the scanner
+ * only ever confirms identifications that exist as real products.
+ */
+export async function searchRealCards(setName: string, cardName: string): Promise<RealCardCandidate[]> {
+  if (!justTcgKey || !setName.trim() || !cardName.trim()) return [];
+  const setSlug = kebab(setName);
+  const cached = realCache.get(setSlug);
+  let cards: RealCardCandidate[];
+  if (cached && Date.now() - cached.at < REAL_TTL) {
+    cards = cached.cards;
+  } else {
+    // JustTCG set ids carry a game suffix, e.g. "base-set-pokemon".
+    const attempts = [`${setSlug}-pokemon`, setSlug];
+    cards = [];
+    for (const slug of attempts) {
+      try {
+        const json = await fetchJson<{ data?: JtcCardRow[] }>(
+          `${JUSTTCG_BASE}?game=pokemon&set=${encodeURIComponent(slug)}&limit=400`,
+          { "x-api-key": justTcgKey },
+          14000,
+        );
+        cards = (json?.data ?? []).map(toCandidate);
+        if (cards.length) break;
+      } catch {
+        // try next slug variant
+      }
+    }
+    realCache.set(setSlug, { at: Date.now(), cards });
+  }
+  if (!cards.length) return [];
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const target = norm(cardName);
+  return cards.filter((c) => {
+    const cn = norm(c.name);
+    return cn.includes(target) || target.includes(cn);
+  });
+}
+
+/** Picks the best real-product match for an identification (number match wins). */
+export function pickRealMatch(
+  candidates: RealCardCandidate[],
+  number: string,
+  name: string,
+): RealCardCandidate | null {
+  if (!candidates.length) return null;
+  const digits = (s: string) => (s.match(/\d+/g) ?? []).join("/");
+  const numNorm = digits(number);
+  const byNumber = numNorm ? candidates.find((c) => digits(c.number) === numNorm) : undefined;
+  if (byNumber) return byNumber;
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return candidates.find((c) => norm(c.name) === norm(name)) ?? candidates[0];
+}
+
 /**
  * Collection value across grades: sums live JustTCG prices where available
  * and falls back to the bundled VCA Market Index per item.

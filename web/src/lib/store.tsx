@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   CATALOG,
@@ -11,6 +11,18 @@ import {
   cardById,
   userById,
 } from "./data";
+import {
+  insertProfileMedia,
+  insertScanRecord,
+  deleteProfileMedia,
+  listProfileBlocks,
+  listProfileMedia,
+  listScanHistory,
+  listVaultSlabs,
+  saveProfileBlocks,
+  upsertVaultSlab,
+} from "./db";
+import { isBackendReady } from "./supabase";
 import type {
   CatalogCard,
   CollectionItem,
@@ -19,10 +31,15 @@ import type {
   GradeLabel,
   MarketplaceAccount,
   Post,
+  ProfileBlockDef,
+  ProfileBlockKind,
+  ProfileMediaItem,
+  ScanHistoryRecord,
   SlabRecord,
   SlabStatus,
   User,
   VcaNotification,
+  VaultSlabRow,
 } from "./types";
 
 interface ScanResult {
@@ -78,6 +95,17 @@ interface VcaStore {
   connectMarketplace: (platformId: string, handle: string) => void;
   disconnectMarketplace: (platformId: string) => void;
   syncMarketplace: (platformId: string) => void;
+  /* profile building blocks (Supabase-backed) */
+  profileBlocks: ProfileBlockDef[];
+  profileMedia: ProfileMediaItem[];
+  scanHistory: ScanHistoryRecord[];
+  backendReady: boolean;
+  addBlock: (kind: ProfileBlockKind) => void;
+  moveBlock: (id: string, dir: -1 | 1) => void;
+  removeBlock: (id: string) => void;
+  addProfileMedia: (m: { mediaType: "image" | "link"; title: string; url: string; caption?: string | null }) => void;
+  removeProfileMedia: (id: string) => void;
+  recordScan: (r: Omit<ScanHistoryRecord, "id" | "createdAt">) => void;
   /* helpers */
   cardById: (id: string) => CatalogCard | undefined;
   userById: (id: string) => User;
@@ -92,16 +120,34 @@ const uid = (prefix: string) => `${prefix}-${idCounter++}`;
 
 const fmt = (n: number) => String(n).padStart(4, "0");
 
+const SEED_SLABS: SlabRecord[] = [
+  { id: "s1", serial: "VCA-D-26-0104", kind: "digital", cardId: "charizard-base", itemId: "i1", grade: "VCA 10", ownerName: "Todd", createdAt: "2026-09-14" },
+  { id: "s2", serial: "VCA-26-A-0001", kind: "physical", cardId: "gyarados-base", grade: "VCA 10", ownerName: "Kenji", createdAt: "2026-09-12" },
+];
+
+const DEFAULT_BLOCKS: ProfileBlockDef[] = [
+  { id: "b-stats", kind: "stats" },
+  { id: "b-featured", kind: "featured" },
+  { id: "b-media", kind: "media" },
+  { id: "b-links", kind: "links" },
+  { id: "b-activity", kind: "activity" },
+];
+
+const slabValue = (card: CatalogCard | undefined, grade: GradeLabel | null): number => {
+  if (!card) return 0;
+  if (grade === "VCA 10") return card.prices.g10;
+  if (grade === "VCA 9") return card.prices.g9;
+  if (grade === "VCA 8") return card.prices.g8;
+  return card.prices.raw;
+};
+
 export function VcaProvider({ children }: { children: ReactNode }) {
   const [users] = useState<User[]>(USERS);
   const [collection, setCollection] = useState<CollectionItem[]>(COLLECTION);
   const [posts, setPosts] = useState<Post[]>(POSTS);
   const [conversations, setConversations] = useState<Conversation[]>(CONVERSATIONS);
   const [notifications, setNotifications] = useState<VcaNotification[]>(NOTIFICATIONS);
-  const [slabs, setSlabs] = useState<SlabRecord[]>([
-    { id: "s1", serial: "VCA-D-26-0104", kind: "digital", cardId: "charizard-base", itemId: "i1", grade: "VCA 10", ownerName: "Todd", createdAt: "2026-09-14" },
-    { id: "s2", serial: "VCA-26-A-0001", kind: "physical", cardId: "gyarados-base", grade: "VCA 10", ownerName: "Kenji", createdAt: "2026-09-12" },
-  ]);
+  const [slabs, setSlabs] = useState<SlabRecord[]>(SEED_SLABS);
   const [follows, setFollows] = useState<Record<string, boolean>>({ "u-guru": true, "u-bella": true });
   const [connections, setConnections] = useState<Record<string, boolean>>({ "u-guru": true });
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
@@ -182,6 +228,20 @@ export function VcaProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString().slice(0, 10),
       };
       setSlabs((prev) => [record, ...prev]);
+      const c = cardById(cardId);
+      void upsertVaultSlab({
+        clientId: record.id,
+        serial,
+        kind: "digital",
+        cardId,
+        cardName: c?.name ?? "Unknown",
+        cardSet: c?.set ?? null,
+        cardArt: c?.artUrl ?? null,
+        grade,
+        value: slabValue(c, grade),
+        ownerName: record.ownerName,
+        mintedAt: new Date().toISOString(),
+      });
       pushNotification({ kind: "slab", text: `Digital VCA slab ${serial} created for ${cardById(cardId)?.name ?? "card"}`, cardId });
       return record;
     },
@@ -203,6 +263,20 @@ export function VcaProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString().slice(0, 10),
       };
       setSlabs((prev) => [record, ...prev]);
+      const gc = cardById(cardId);
+      void upsertVaultSlab({
+        clientId: record.id,
+        serial,
+        kind: "physical",
+        cardId,
+        cardName: gc?.name ?? "Unknown",
+        cardSet: gc?.set ?? null,
+        cardArt: gc?.artUrl ?? null,
+        grade: null,
+        value: 0,
+        ownerName: record.ownerName,
+        mintedAt: new Date().toISOString(),
+      });
       pushNotification({ kind: "grade", text: `Grading submission received · ${cardById(cardId)?.name ?? "card"} · serial ${serial}`, cardId });
       return record;
     },
@@ -381,6 +455,129 @@ export function VcaProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  /* ------------------- profile blocks / media / scans ------------------- */
+  const [profileBlocks, setProfileBlocks] = useState<ProfileBlockDef[]>(DEFAULT_BLOCKS);
+  const [profileMedia, setProfileMedia] = useState<ProfileMediaItem[]>([]);
+  const [scanHistory, setScanHistory] = useState<ScanHistoryRecord[]>([]);
+
+  /* Load the Supabase-backed workspace once; seed the slab table from the
+     local demo data on first run. */
+  useEffect(() => {
+    if (!isBackendReady) return;
+    let cancelled = false;
+    (async () => {
+      const [rows, blocks, media, scans] = await Promise.all([
+        listVaultSlabs(),
+        listProfileBlocks(),
+        listProfileMedia(),
+        listScanHistory(),
+      ]);
+      if (cancelled) return;
+      if (rows.length) {
+        setSlabs((prev) => {
+          const map = new Map(prev.map((s) => [s.id, s]));
+          for (const r of rows) {
+            if (map.has(r.clientId)) continue;
+            map.set(r.clientId, {
+              id: r.clientId,
+              serial: r.serial,
+              kind: r.kind,
+              cardId: r.cardId ?? "unknown",
+              grade: (r.grade as GradeLabel | null) ?? null,
+              ownerName: r.ownerName,
+              createdAt: r.mintedAt.slice(0, 10),
+            });
+          }
+          return [...map.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+        });
+      } else {
+        for (const s of SEED_SLABS) {
+          const c = cardById(s.cardId);
+          void upsertVaultSlab({
+            clientId: s.id,
+            serial: s.serial,
+            kind: s.kind,
+            cardId: s.cardId,
+            cardName: c?.name ?? "Unknown",
+            cardSet: c?.set ?? null,
+            cardArt: c?.artUrl ?? null,
+            grade: s.grade,
+            value: slabValue(c, s.grade),
+            ownerName: s.ownerName,
+            mintedAt: new Date(`${s.createdAt}T12:00:00Z`).toISOString(),
+          });
+        }
+      }
+      if (blocks.length) setProfileBlocks(blocks);
+      if (media.length) setProfileMedia(media);
+      if (scans.length) setScanHistory(scans);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const addBlock = useCallback((kind: ProfileBlockKind) => {
+    setProfileBlocks((prev) => {
+      if (prev.length >= 8) return prev;
+      const next = [...prev, { id: `blk-${Date.now()}`, kind }];
+      void saveProfileBlocks(next);
+      return next;
+    });
+  }, []);
+
+  const moveBlock = useCallback((id: string, dir: -1 | 1) => {
+    setProfileBlocks((prev) => {
+      const idx = prev.findIndex((b) => b.id === id);
+      const to = idx + dir;
+      if (idx < 0 || to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[to]] = [next[to], next[idx]];
+      void saveProfileBlocks(next);
+      return next;
+    });
+  }, []);
+
+  const removeBlock = useCallback((id: string) => {
+    setProfileBlocks((prev) => {
+      const next = prev.filter((b) => b.id !== id);
+      void saveProfileBlocks(next);
+      return next;
+    });
+  }, []);
+
+  const addProfileMedia = useCallback(
+    (m: { mediaType: "image" | "link"; title: string; url: string; caption?: string | null }) => {
+      const item: ProfileMediaItem = {
+        id: `pm-${Date.now()}`,
+        mediaType: m.mediaType,
+        title: m.title,
+        url: m.url,
+        caption: m.caption ?? null,
+      };
+      setProfileMedia((prev) => {
+        void insertProfileMedia(item, prev.length);
+        return [...prev, item];
+      });
+      pushNotification({
+        kind: "slab",
+        text: m.mediaType === "image" ? "Media uploaded to your profile gallery." : "Link added to your profile.",
+      });
+    },
+    [pushNotification],
+  );
+
+  const removeProfileMedia = useCallback((id: string) => {
+    setProfileMedia((prev) => prev.filter((m) => m.id !== id));
+    void deleteProfileMedia(id);
+  }, []);
+
+  const recordScan = useCallback((r: Omit<ScanHistoryRecord, "id" | "createdAt">) => {
+    const rec: ScanHistoryRecord = { ...r, id: `scan-${Date.now()}`, createdAt: new Date().toISOString() };
+    setScanHistory((prev) => [rec, ...prev].slice(0, 100));
+    void insertScanRecord(rec);
+  }, []);
+
   const value: VcaStore = {
     users,
     currentUser,
@@ -419,6 +616,16 @@ export function VcaProvider({ children }: { children: ReactNode }) {
     connectMarketplace,
     disconnectMarketplace,
     syncMarketplace,
+    profileBlocks,
+    profileMedia,
+    scanHistory,
+    backendReady: isBackendReady,
+    addBlock,
+    moveBlock,
+    removeBlock,
+    addProfileMedia,
+    removeProfileMedia,
+    recordScan,
     cardById,
     userById,
     myItems,

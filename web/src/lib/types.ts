@@ -152,3 +152,49 @@ export interface MarketplaceAccount {
   revenue30d: number;
   lastSynced: string | null;
 }
+
+/* ------------------------- profile building blocks ------------------------- */
+
+export type ProfileBlockKind = "stats" | "featured" | "media" | "links" | "activity" | "bio";
+
+export interface ProfileBlockDef {
+  id: string;
+  kind: ProfileBlockKind;
+}
+
+export interface ProfileMediaItem {
+  id: string;
+  mediaType: "image" | "link";
+  title: string;
+  url: string;
+  caption?: string | null;
+}
+
+/* ------------------------------ vault / scans ------------------------------ */
+
+export interface VaultSlabRow {
+  clientId: string;
+  serial: string;
+  kind: "digital" | "physical";
+  cardId: string | null;
+  cardName: string;
+  cardSet: string | null;
+  cardArt: string | null;
+  grade: string | null;
+  value: number;
+  ownerName: string;
+  mintedAt: string;
+}
+
+export interface ScanHistoryRecord {
+  id: string;
+  cardName: string;
+  setName: string;
+  number: string;
+  rarity: string;
+  verdict: "authentic" | "suspect" | "counterfeit";
+  confidence: number;
+  matchedCardId: string | null;
+  verifiedProduct: boolean;
+  createdAt: string;
+}
