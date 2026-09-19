@@ -1,0 +1,10 @@
+{
+  "apps": [
+    {
+      "name": "VCA Slabook",
+      "path": "web",
+      "framework": "web"
+    }
+  ],
+  "$schema": "https://rork.com/schema/rork.json"
+}
