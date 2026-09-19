@@ -36,6 +36,8 @@ export interface LivePrices {
   g8: number;
   /** Most recent price points (unix seconds, USD) — prefer graded gem-mint series. */
   history: { t: number; p: number }[];
+  /** Raw (ungraded) market price points from the last 90 days (unix seconds, USD). */
+  rawHistory: { t: number; p: number }[];
   updatedAt: string;
   source: string;
 }
@@ -141,6 +143,7 @@ interface JtcGradedResult {
   g9: number;
   g8: number;
   history: { t: number; p: number }[];
+  rawHistory: { t: number; p: number }[];
   updatedAt: string;
 }
 
@@ -194,12 +197,18 @@ async function fetchJustTcgGraded(card: PriceCard): Promise<JtcGradedResult | nu
         variants[0];
       const history = (usdMarket(historyVariant)?.price_history ?? []).slice(-30);
 
+      /* Raw near-mint price series, trimmed to the trailing 90 days. */
+      const cutoff = Date.now() / 1000 - 90 * 24 * 60 * 60;
+      const rawHistory = (usdMarket(nm ?? rawVariants[0] ?? variants[0])?.price_history ?? []).filter(
+        (pt) => pt.t >= cutoff,
+      );
+
       const ts = usdMarket(historyVariant)?.updated_at;
       const updatedAt = ts
         ? new Date(ts * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
         : "today";
 
-      return { raw, g10, g9, g8, history, updatedAt };
+      return { raw, g10, g9, g8, history, rawHistory, updatedAt };
     } catch {
       // try the next set-slug variant
     }
@@ -236,6 +245,7 @@ export async function fetchLivePrices(card: PriceCard | undefined): Promise<Live
     g9,
     g8,
     history: jtc?.history ?? [],
+    rawHistory: jtc?.rawHistory ?? [],
     updatedAt,
     source: sources.join(" + ") || "VCA Market Index",
   };
