@@ -7,6 +7,7 @@ import GradeRoiPanel from "@/components/GradeRoiPanel";
 import PostCard from "@/components/PostCard";
 import PriceHistory from "@/components/PriceHistory";
 import PriceLadder from "@/components/PriceLadder";
+import RawTrendChart from "@/components/RawTrendChart";
 import { CATALOG } from "@/lib/data";
 import { useLivePrices } from "@/lib/prices";
 import { useVca } from "@/lib/store";
@@ -165,6 +166,9 @@ export default function CardDetail() {
           )}
         </div>
       </div>
+
+      {/* raw market trend — interactive 90-day chart */}
+      <RawTrendChart card={card} live={livePrices ?? null} />
 
       {/* price engine */}
       <div className="grid gap-4 sm:grid-cols-2">

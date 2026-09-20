@@ -2,20 +2,54 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Activity,
+  Bot,
+  BrainCircuit,
   Database,
   Gem,
   LogOut,
   Boxes,
   Puzzle,
+  RefreshCw,
   ScanLine,
   ShieldCheck,
   Terminal,
+  Trash2,
   Users,
+  Wrench,
 } from "lucide-react";
 
 import { ACTIVITY, CATALOG, cardById } from "@/lib/data";
 import { EXTENSIONS, useExtensionToggles } from "@/lib/extensions";
 import { hasLivePricing } from "@/lib/prices";
+import {
+  deleteMemoryById,
+  getAllMemories,
+  recallMemories,
+  storeMemory,
+  type MemoryEntry,
+} from "@/lib/vcaos/agentMemory";
+import {
+  calculateCentering,
+  calculateOverallGrade,
+  generateTamperProofHash,
+  generateVcaSerial,
+  inspectFourCorners,
+  inspectFourEdges,
+  analyzeSurface,
+  analyzePrintQuality,
+} from "@/lib/vcaos/forensicCore";
+import {
+  ensurePriceDatabase,
+  getAutonomousTasks,
+  syncPokemonPrices,
+} from "@/lib/vcaos/priceSync";
+import {
+  deleteDynamicTool,
+  executeDynamicTool,
+  getDynamicTools,
+  type DynamicToolMetadata,
+  type ToolContext,
+} from "@/lib/vcaos/toolRegistry";
 import { useVca } from "@/lib/store";
 import type { GradeLabel, ScanHistoryRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -33,13 +67,14 @@ const SESSION_KEY = "vca-os-session";
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
-type Tab = "overview" | "cards" | "grading" | "scans" | "extensions";
+type Tab = "overview" | "cards" | "grading" | "scans" | "backend" | "extensions";
 
 const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: "overview", label: "Overview", icon: Activity },
   { id: "cards", label: "Card Database", icon: Database },
   { id: "grading", label: "Grading Queue", icon: Gem },
   { id: "scans", label: "Scan Forensics", icon: ScanLine },
+  { id: "backend", label: "Backend Core", icon: Bot },
   { id: "extensions", label: "Extensions", icon: Puzzle },
 ];
 
@@ -218,6 +253,7 @@ function TabContent() {
         {tab === "cards" && <CardsTab />}
         {tab === "grading" && <GradingTab />}
         {tab === "scans" && <ScansTab />}
+        {tab === "backend" && <BackendTab />}
         {tab === "extensions" && <ExtensionsTab />}
       </div>
     </>
@@ -256,6 +292,7 @@ function OverviewTab() {
     { label: "JustTCG Graded Pricing", status: hasLivePricing() ? "ONLINE" : "KEY MISSING", ok: hasLivePricing() },
     { label: "AI Vision Engine", status: "ONLINE", ok: true },
     { label: "VCA NEWS Wire", status: backendReady ? "ONLINE" : "EDGE FN LIVE", ok: true },
+    { label: "VCA Computer Backend Core", status: "ONLINE", ok: true },
   ];
 
   return (
@@ -558,6 +595,368 @@ function ExtensionsTab() {
         ExtendAPI pattern: every extension registers versioned methods; enabled methods are exposed to the platform and
         toggles persist across sessions. Social features run on the OSSN v10 bridge.
       </p>
+    </section>
+  );
+}
+
+/* ----------------------------- backend core ----------------------------- */
+
+const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const TOOL_CONTEXT: ToolContext = {
+  lookupCard: (name) => {
+    const target = normName(name);
+    const card =
+      CATALOG.find((c) => normName(c.name) === target) ??
+      CATALOG.find((c) => normName(c.name).includes(target) || target.includes(normName(c.name)));
+    if (!card) return null;
+    return {
+      name: card.name,
+      setName: card.set,
+      number: card.number,
+      raw: card.prices.raw,
+      psa10: card.prices.g10,
+      psa9: card.prices.g9,
+      psa8: card.prices.g8,
+    };
+  },
+  catalog: {
+    ids: () => CATALOG.map((c) => c.id),
+    nameOf: (id) => cardById(id)?.name ?? id,
+  },
+  now: () => new Date(),
+};
+
+const TOOL_SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
+  price_arbitrage_calculator: { cardName: "Charizard", rawPurchasePrice: 880, gradingFee: 85 },
+  catalog_lookup: { query: "charizard", limit: 5 },
+  vault_value_estimator: {
+    holdings: [
+      { name: "Charizard", grade: "10" },
+      { name: "Umbreon VMAX", grade: "9" },
+      { name: "Pikachu ex", grade: "raw" },
+    ],
+  },
+};
+
+function BackendTab() {
+  return (
+    <div className="space-y-4">
+      <MemoryPanel />
+      <ToolsPanel />
+      <PriceSyncPanel />
+      <ForensicPanel />
+    </div>
+  );
+}
+
+function PanelHeader({ icon: Icon, title, badge }: { icon: typeof Activity; title: string; badge?: string }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <p className="flex items-center gap-2 font-display text-sm font-bold tracking-wide text-white/90">
+        <Icon className="h-4 w-4 text-holo-cyan" /> {title}
+      </p>
+      {badge && (
+        <span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 font-mono text-[9px] font-bold text-white/50">
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function MemoryPanel() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<MemoryEntry[]>(() => getAllMemories().slice(0, 8));
+  const [newKey, setNewKey] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const r = recallMemories(query);
+    setResults(r.query.trim() ? r.memories : getAllMemories().slice(0, 8));
+  }, [query, refresh]);
+
+  const add = () => {
+    if (!newKey.trim() || !newContent.trim()) return;
+    storeMemory({ category: "semantic", key: newKey.trim(), content: newContent.trim(), importance: 6, tags: ["admin"] });
+    setNewKey("");
+    setNewContent("");
+    setRefresh((n) => n + 1);
+  };
+
+  return (
+    <section className="glass rounded-3xl p-4">
+      <PanelHeader icon={BrainCircuit} title="AGENT MEMORY" badge={`${getAllMemories().length} ENTRIES`} />
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Recall: search memory by keyword…"
+        className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-[13px] text-white outline-none placeholder:text-white/30 focus:border-holo-cyan/50"
+      />
+      <div className="mt-2.5 space-y-2">
+        {results.map((m) => (
+          <div key={m.id} className="flex items-start gap-3 rounded-xl border border-white/8 bg-white/[0.03] px-3.5 py-2.5">
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-center gap-2 text-[12px] font-bold text-white">
+                <span className="font-mono text-holo-cyan">{m.key}</span>
+                <span className="rounded-full bg-white/8 px-2 py-0.5 font-mono text-[8px] font-bold uppercase text-white/50">{m.category}</span>
+                <span className="font-mono text-[9px] text-holo-gold">imp {m.importance}/10</span>
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-white/60">{m.content}</p>
+            </div>
+            <button
+              onClick={() => {
+                deleteMemoryById(m.id);
+                setRefresh((n) => n + 1);
+              }}
+              aria-label={`Delete memory ${m.key}`}
+              className="shrink-0 rounded-lg p-1.5 text-white/30 transition-colors hover:bg-red-500/10 hover:text-red-400"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        {results.length === 0 && (
+          <p className="rounded-xl border border-white/8 bg-white/[0.03] p-4 text-center text-xs text-white/40">
+            No memories match “{query}”.
+          </p>
+        )}
+      </div>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <input
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+          placeholder="memory_key"
+          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-mono text-[12px] text-white outline-none placeholder:text-white/30 focus:border-holo-cyan/50 sm:w-48"
+        />
+        <input
+          value={newContent}
+          onChange={(e) => setNewContent(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="What should the agent remember?"
+          className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white outline-none placeholder:text-white/30 focus:border-holo-cyan/50"
+        />
+        <button
+          onClick={add}
+          className="rounded-xl bg-gradient-to-r from-holo-cyan to-holo-violet px-4 py-2 text-[11px] font-bold text-void transition-transform active:scale-95"
+        >
+          STORE
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function ToolsPanel() {
+  const [tools, setTools] = useState<DynamicToolMetadata[]>(() => getDynamicTools());
+  const [output, setOutput] = useState<{ tool: string; result: string } | null>(null);
+  const [running, setRunning] = useState<string | null>(null);
+
+  const refresh = () => setTools(getDynamicTools());
+
+  const run = async (tool: DynamicToolMetadata) => {
+    setRunning(tool.name);
+    setOutput(null);
+    const args = TOOL_SAMPLE_ARGS[tool.name] ?? {};
+    const result = await executeDynamicTool(tool.name, args, TOOL_CONTEXT);
+    setOutput({ tool: tool.name, result: JSON.stringify(result, null, 2) });
+    setRunning(null);
+    refresh();
+  };
+
+  return (
+    <section className="glass rounded-3xl p-4">
+      <PanelHeader icon={Wrench} title="DYNAMIC TOOL REGISTRY" badge={`${tools.length} TOOLS`} />
+      <div className="mt-3 space-y-2">
+        {tools.map((t) => (
+          <div key={t.name} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/8 bg-white/[0.03] px-3.5 py-2.5">
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-center gap-2 text-[12px] font-bold text-white">
+                <span className="font-mono text-holo-mint">{t.name}</span>
+                <span className="rounded-full bg-white/8 px-2 py-0.5 font-mono text-[8px] font-bold uppercase text-white/50">{t.author}</span>
+                <span className="font-mono text-[9px] text-white/40">{t.executionCount} runs</span>
+              </p>
+              <p className="mt-0.5 truncate text-[11px] text-white/55">{t.description}</p>
+            </div>
+            <button
+              onClick={() => run(t)}
+              disabled={running !== null}
+              className="flex items-center gap-1.5 rounded-full border border-holo-cyan/40 bg-holo-cyan/10 px-3 py-1.5 text-[10px] font-bold text-holo-cyan transition-all hover:bg-holo-cyan/20 active:scale-95 disabled:opacity-40"
+            >
+              <RefreshCw className={cn("h-3 w-3", running === t.name && "animate-spin")} />
+              {running === t.name ? "RUNNING" : "RUN"}
+            </button>
+            <button
+              onClick={() => {
+                deleteDynamicTool(t.name);
+                refresh();
+              }}
+              aria-label={`Delete tool ${t.name}`}
+              className="shrink-0 rounded-lg p-1.5 text-white/30 transition-colors hover:bg-red-500/10 hover:text-red-400"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+      {output && (
+        <pre className="no-scrollbar mt-2.5 max-h-56 overflow-auto rounded-xl border border-holo-cyan/25 bg-black/50 p-3 font-mono text-[10.5px] leading-relaxed text-holo-mint">
+          {`$ ${output.tool}\n${output.result}`}
+        </pre>
+      )}
+      <p className="mt-2 text-[10px] text-white/35">
+        Tools execute in a sandboxed runtime with platform context (real catalog lookup + pricing). Sample arguments are
+        injected per tool.
+      </p>
+    </section>
+  );
+}
+
+function PriceSyncPanel() {
+  const [db, setDb] = useState(() => ensurePriceDatabase());
+  const [tasks, setTasks] = useState(() => getAutonomousTasks());
+  const [syncing, setSyncing] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: CATALOG.length });
+
+  const runSync = async () => {
+    setSyncing(true);
+    setProgress({ done: 0, total: CATALOG.length });
+    const result = await syncPokemonPrices("manual", (done, total) => setProgress({ done, total }));
+    setDb(result);
+    setTasks(getAutonomousTasks());
+    setSyncing(false);
+  };
+
+  return (
+    <section className="glass rounded-3xl p-4">
+      <PanelHeader
+        icon={RefreshCw}
+        title="AUTONOMOUS PRICE SYNC"
+        badge={db.lastSyncTimestamp ? `LAST SYNC ${new Date(db.lastSyncTimestamp).toLocaleTimeString()}` : "NEVER SYNCED"}
+      />
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+          <p className="font-mono text-[8.5px] font-bold uppercase tracking-wider text-white/40">Cards tracked</p>
+          <p className="font-display text-base font-extrabold text-white">{db.totalCardsTracked}</p>
+        </div>
+        <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+          <p className="font-mono text-[8.5px] font-bold uppercase tracking-wider text-white/40">Live synced</p>
+          <p className="font-display text-base font-extrabold text-holo-mint">
+            {Object.values(db.cards).filter((c) => !c.source.includes("bundled")).length}
+          </p>
+        </div>
+        <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+          <p className="font-mono text-[8.5px] font-bold uppercase tracking-wider text-white/40">Sync logs</p>
+          <p className="font-display text-base font-extrabold text-white">{db.syncLogs.length}</p>
+        </div>
+        <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+          <p className="font-mono text-[8.5px] font-bold uppercase tracking-wider text-white/40">Active tasks</p>
+          <p className="font-display text-base font-extrabold text-holo-cyan">{tasks.filter((t) => t.status === "active").length}</p>
+        </div>
+      </div>
+      {syncing && (
+        <div className="mt-3">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-white/8">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-holo-cyan to-holo-violet transition-all"
+              style={{ width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%` }}
+            />
+          </div>
+          <p className="mt-1.5 font-mono text-[10px] text-white/50">
+            Syncing real market data… {progress.done}/{progress.total}
+          </p>
+        </div>
+      )}
+      <button
+        onClick={runSync}
+        disabled={syncing}
+        className="mt-3 flex items-center gap-2 rounded-xl bg-gradient-to-r from-holo-cyan to-holo-violet px-4 py-2.5 text-[11px] font-bold text-void transition-transform active:scale-95 disabled:opacity-50"
+      >
+        <RefreshCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} />
+        {syncing ? "SYNCING…" : "RUN FULL SYNC NOW"}
+      </button>
+      <div className="mt-3 space-y-2">
+        {tasks.map((t) => (
+          <div key={t.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/8 bg-white/[0.03] px-3.5 py-2.5">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-holo-mint shadow-[0_0_8px_rgba(52,231,181,0.8)]" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12px] font-semibold text-white/85">{t.name}</p>
+              <p className="font-mono text-[9px] text-white/40">
+                every {t.intervalMinutes}m · {t.runCount} runs {t.lastRun ? `· last ${new Date(t.lastRun).toLocaleTimeString()}` : ""}
+              </p>
+            </div>
+            {t.lastResultSummary && <p className="w-full truncate font-mono text-[9px] text-holo-mint/70">{t.lastResultSummary}</p>}
+          </div>
+        ))}
+      </div>
+      {db.syncLogs[0] && (
+        <p className="mt-2 font-mono text-[10px] text-white/40">{db.syncLogs[0].summary}</p>
+      )}
+    </section>
+  );
+}
+
+function ForensicPanel() {
+  const [cert, setCert] = useState<string | null>(null);
+
+  const runSelfTest = () => {
+    // Sample forensic pass: measured borders + inspected corners/edges/surface/print.
+    const centering = calculateCentering(52, 48, 51, 49);
+    const corners = inspectFourCorners(9.5, 9.5, 9.0, 9.5);
+    const edges = inspectFourEdges(9.5, 9.5, 9.0, 9.5);
+    const surface = analyzeSurface(0, 0, 98);
+    const print = analyzePrintQuality(98.5, 0.03);
+    const overall = calculateOverallGrade({
+      centering: centering.subgrade,
+      corners: corners.subgrade,
+      edges: edges.subgrade,
+      surface: surface.subgrade,
+      print: print.subgrade,
+    });
+    const serial = generateVcaSerial();
+    const hash = generateTamperProofHash({
+      card: "BASE1-004",
+      grade: overall.gradeLabel,
+      centering: centering.lrRatioLabel,
+      serial,
+    });
+    setCert(
+      JSON.stringify(
+        {
+          centering: { ratio: centering.lrRatioLabel, subgrade: centering.subgrade, gemMint10: centering.meetsGemMint10 },
+          corners: corners.subgrade,
+          edges: edges.subgrade,
+          surface: surface.subgrade,
+          print: print.subgrade,
+          overall: overall,
+          serial,
+          tamperProofHash: hash,
+        },
+        null,
+        2,
+      ),
+    );
+  };
+
+  return (
+    <section className="glass rounded-3xl p-4">
+      <PanelHeader icon={ShieldCheck} title="FORENSIC GRADING CORE" badge="5-CATEGORY ENGINE" />
+      <p className="mt-2 text-[11px] leading-relaxed text-white/55">
+        Centering geometry (55/45 gem standard) · corner & edge inspection · surface / print forensics · weighted
+        overall grade with weakest-subgrade floor · VCA serial + tamper-proof hash issuance.
+      </p>
+      <button
+        onClick={runSelfTest}
+        className="mt-3 flex items-center gap-2 rounded-xl border border-holo-mint/40 bg-holo-mint/10 px-4 py-2.5 text-[11px] font-bold text-holo-mint transition-all hover:bg-holo-mint/20 active:scale-95"
+      >
+        <ShieldCheck className="h-3.5 w-3.5" /> RUN CERTIFICATION SELF-TEST
+      </button>
+      {cert && (
+        <pre className="no-scrollbar mt-2.5 max-h-56 overflow-auto rounded-xl border border-holo-mint/25 bg-black/50 p-3 font-mono text-[10.5px] leading-relaxed text-holo-mint">
+          {cert}
+        </pre>
+      )}
     </section>
   );
 }
