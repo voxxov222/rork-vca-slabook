@@ -9,6 +9,7 @@ import {
   LogOut,
   Boxes,
   Puzzle,
+  Radar,
   RefreshCw,
   ScanLine,
   ShieldCheck,
@@ -29,16 +30,6 @@ import {
   type MemoryEntry,
 } from "@/lib/vcaos/agentMemory";
 import {
-  calculateCentering,
-  calculateOverallGrade,
-  generateTamperProofHash,
-  generateVcaSerial,
-  inspectFourCorners,
-  inspectFourEdges,
-  analyzeSurface,
-  analyzePrintQuality,
-} from "@/lib/vcaos/forensicCore";
-import {
   ensurePriceDatabase,
   getAutonomousTasks,
   syncPokemonPrices,
@@ -53,6 +44,7 @@ import {
 import { useVca } from "@/lib/store";
 import type { GradeLabel, ScanHistoryRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import ForensicsDashboard from "@/components/ForensicsDashboard";
 
 /**
  * VCA OS — the admin operating system.
@@ -67,13 +59,14 @@ const SESSION_KEY = "vca-os-session";
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
-type Tab = "overview" | "cards" | "grading" | "scans" | "backend" | "extensions";
+type Tab = "overview" | "cards" | "grading" | "scans" | "forensics" | "backend" | "extensions";
 
 const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: "overview", label: "Overview", icon: Activity },
   { id: "cards", label: "Card Database", icon: Database },
   { id: "grading", label: "Grading Queue", icon: Gem },
   { id: "scans", label: "Scan Forensics", icon: ScanLine },
+  { id: "forensics", label: "Forensics", icon: Radar },
   { id: "backend", label: "Backend Core", icon: Bot },
   { id: "extensions", label: "Extensions", icon: Puzzle },
 ];
@@ -253,6 +246,7 @@ function TabContent() {
         {tab === "cards" && <CardsTab />}
         {tab === "grading" && <GradingTab />}
         {tab === "scans" && <ScansTab />}
+        {tab === "forensics" && <ForensicsDashboard />}
         {tab === "backend" && <BackendTab />}
         {tab === "extensions" && <ExtensionsTab />}
       </div>
@@ -645,7 +639,6 @@ function BackendTab() {
       <MemoryPanel />
       <ToolsPanel />
       <PriceSyncPanel />
-      <ForensicPanel />
     </div>
   );
 }
@@ -892,70 +885,6 @@ function PriceSyncPanel() {
       </div>
       {db.syncLogs[0] && (
         <p className="mt-2 font-mono text-[10px] text-white/40">{db.syncLogs[0].summary}</p>
-      )}
-    </section>
-  );
-}
-
-function ForensicPanel() {
-  const [cert, setCert] = useState<string | null>(null);
-
-  const runSelfTest = () => {
-    // Sample forensic pass: measured borders + inspected corners/edges/surface/print.
-    const centering = calculateCentering(52, 48, 51, 49);
-    const corners = inspectFourCorners(9.5, 9.5, 9.0, 9.5);
-    const edges = inspectFourEdges(9.5, 9.5, 9.0, 9.5);
-    const surface = analyzeSurface(0, 0, 98);
-    const print = analyzePrintQuality(98.5, 0.03);
-    const overall = calculateOverallGrade({
-      centering: centering.subgrade,
-      corners: corners.subgrade,
-      edges: edges.subgrade,
-      surface: surface.subgrade,
-      print: print.subgrade,
-    });
-    const serial = generateVcaSerial();
-    const hash = generateTamperProofHash({
-      card: "BASE1-004",
-      grade: overall.gradeLabel,
-      centering: centering.lrRatioLabel,
-      serial,
-    });
-    setCert(
-      JSON.stringify(
-        {
-          centering: { ratio: centering.lrRatioLabel, subgrade: centering.subgrade, gemMint10: centering.meetsGemMint10 },
-          corners: corners.subgrade,
-          edges: edges.subgrade,
-          surface: surface.subgrade,
-          print: print.subgrade,
-          overall: overall,
-          serial,
-          tamperProofHash: hash,
-        },
-        null,
-        2,
-      ),
-    );
-  };
-
-  return (
-    <section className="glass rounded-3xl p-4">
-      <PanelHeader icon={ShieldCheck} title="FORENSIC GRADING CORE" badge="5-CATEGORY ENGINE" />
-      <p className="mt-2 text-[11px] leading-relaxed text-white/55">
-        Centering geometry (55/45 gem standard) · corner & edge inspection · surface / print forensics · weighted
-        overall grade with weakest-subgrade floor · VCA serial + tamper-proof hash issuance.
-      </p>
-      <button
-        onClick={runSelfTest}
-        className="mt-3 flex items-center gap-2 rounded-xl border border-holo-mint/40 bg-holo-mint/10 px-4 py-2.5 text-[11px] font-bold text-holo-mint transition-all hover:bg-holo-mint/20 active:scale-95"
-      >
-        <ShieldCheck className="h-3.5 w-3.5" /> RUN CERTIFICATION SELF-TEST
-      </button>
-      {cert && (
-        <pre className="no-scrollbar mt-2.5 max-h-56 overflow-auto rounded-xl border border-holo-mint/25 bg-black/50 p-3 font-mono text-[10.5px] leading-relaxed text-holo-mint">
-          {cert}
-        </pre>
       )}
     </section>
   );
