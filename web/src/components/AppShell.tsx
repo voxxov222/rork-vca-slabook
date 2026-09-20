@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import Avatar from "@/components/Avatar";
+import VcaComputerDrawer from "@/components/VcaComputerDrawer";
 import { useVca } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -253,6 +254,9 @@ export default function AppShell() {
       </div>
 
       {notifOpen && <NotificationsPanel onClose={() => setNotifOpen(false)} />}
+
+      {/* admin-only popup side menu with VCA Computer tools */}
+      <VcaComputerDrawer />
 
       {/* content */}
       <main className="px-4 pb-28 pt-4 lg:pb-10 lg:pl-64 lg:pr-6 lg:pt-6">

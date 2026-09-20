@@ -39,8 +39,8 @@ import {
   executeDynamicTool,
   getDynamicTools,
   type DynamicToolMetadata,
-  type ToolContext,
 } from "@/lib/vcaos/toolRegistry";
+import { TOOL_CONTEXT, TOOL_SAMPLE_ARGS } from "@/lib/vcaos/toolContext";
 import { useVca } from "@/lib/store";
 import type { GradeLabel, ScanHistoryRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -594,44 +594,6 @@ function ExtensionsTab() {
 }
 
 /* ----------------------------- backend core ----------------------------- */
-
-const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-const TOOL_CONTEXT: ToolContext = {
-  lookupCard: (name) => {
-    const target = normName(name);
-    const card =
-      CATALOG.find((c) => normName(c.name) === target) ??
-      CATALOG.find((c) => normName(c.name).includes(target) || target.includes(normName(c.name)));
-    if (!card) return null;
-    return {
-      name: card.name,
-      setName: card.set,
-      number: card.number,
-      raw: card.prices.raw,
-      psa10: card.prices.g10,
-      psa9: card.prices.g9,
-      psa8: card.prices.g8,
-    };
-  },
-  catalog: {
-    ids: () => CATALOG.map((c) => c.id),
-    nameOf: (id) => cardById(id)?.name ?? id,
-  },
-  now: () => new Date(),
-};
-
-const TOOL_SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
-  price_arbitrage_calculator: { cardName: "Charizard", rawPurchasePrice: 880, gradingFee: 85 },
-  catalog_lookup: { query: "charizard", limit: 5 },
-  vault_value_estimator: {
-    holdings: [
-      { name: "Charizard", grade: "10" },
-      { name: "Umbreon VMAX", grade: "9" },
-      { name: "Pikachu ex", grade: "raw" },
-    ],
-  },
-};
 
 function BackendTab() {
   return (
