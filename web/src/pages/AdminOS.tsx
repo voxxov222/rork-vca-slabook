@@ -8,6 +8,7 @@ import {
   Gem,
   LogOut,
   Boxes,
+  Microscope,
   Puzzle,
   Radar,
   RefreshCw,
@@ -45,6 +46,7 @@ import { useVca } from "@/lib/store";
 import type { GradeLabel, ScanHistoryRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import ForensicsDashboard from "@/components/ForensicsDashboard";
+import CardInspectionLab from "@/components/CardInspectionLab";
 
 /**
  * VCA OS — the admin operating system.
@@ -59,14 +61,23 @@ const SESSION_KEY = "vca-os-session";
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
-type Tab = "overview" | "cards" | "grading" | "scans" | "forensics" | "backend" | "extensions";
+type Tab =
+  | "overview"
+  | "cards"
+  | "grading"
+  | "scans"
+  | "inspection"
+  | "forensics"
+  | "backend"
+  | "extensions";
 
 const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: "overview", label: "Overview", icon: Activity },
   { id: "cards", label: "Card Database", icon: Database },
   { id: "grading", label: "Grading Queue", icon: Gem },
   { id: "scans", label: "Scan Forensics", icon: ScanLine },
-  { id: "forensics", label: "Forensics", icon: Radar },
+  { id: "inspection", label: "Card Inspection", icon: Microscope },
+  { id: "forensics", label: "Forensic Bench", icon: Radar },
   { id: "backend", label: "Backend Core", icon: Bot },
   { id: "extensions", label: "Extensions", icon: Puzzle },
 ];
@@ -246,6 +257,7 @@ function TabContent() {
         {tab === "cards" && <CardsTab />}
         {tab === "grading" && <GradingTab />}
         {tab === "scans" && <ScansTab />}
+        {tab === "inspection" && <CardInspectionLab />}
         {tab === "forensics" && <ForensicsDashboard />}
         {tab === "backend" && <BackendTab />}
         {tab === "extensions" && <ExtensionsTab />}
