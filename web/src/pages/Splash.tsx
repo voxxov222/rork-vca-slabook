@@ -33,7 +33,7 @@ export default function Splash() {
       >
         <Link
           to="/home"
-          className="pointer-events-auto group flex items-center gap-2.5 rounded-full border border-[#35b6ff]/40 bg-[#0a1220]/80 px-7 py-3 font-mono text-[11px] font-bold tracking-[0.25em] text-[#7ef0ff] backdrop-blur-md transition-all hover:border-[#35b6ff] hover:bg-[#35b6ff]/15 hover:shadow-[0_0_30px_-6px_rgba(53,182,255,0.7)] active:scale-95"
+          className="pointer-events-auto group flex items-center gap-2.5 rounded-full border border-[#3d6be8]/40 bg-[#0a1220]/80 px-7 py-3 font-mono text-[11px] font-bold tracking-[0.25em] text-[#e8394a] backdrop-blur-md transition-all hover:border-[#3d6be8] hover:bg-[#3d6be8]/15 hover:shadow-[0_0_30px_-6px_rgba(61,107,232,0.7)] active:scale-95"
         >
           <ShieldCheck className="h-4 w-4" />
           ENTER VCA SLABOOK

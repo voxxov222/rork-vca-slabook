@@ -90,7 +90,7 @@ function Tilt({ children, className }: { children: React.ReactNode; className?: 
         {children}
         <div
           className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-200 hover:opacity-100"
-          style={{ background: `radial-gradient(45% 45% at ${t.gl}% ${t.gt}%, rgba(126,240,255,0.14), transparent 70%)` }}
+          style={{ background: `radial-gradient(45% 45% at ${t.gl}% ${t.gt}%, rgba(232,57,74,0.14), transparent 70%)` }}
         />
       </div>
     </div>
@@ -159,7 +159,7 @@ const DEFAULT_SLAB_CONFIG: SlabConfig = {
   labelStyle: "gold",
   holo: 55,
   environment: "nebula",
-  lightTint: "#7ef0ff",
+  lightTint: "#e8394a",
   cardOffset: 0,
   showGrade: true,
   autoSpin: true,
@@ -296,7 +296,7 @@ export default function Vault() {
             className={cn(
               "rounded-full px-3.5 py-1.5 font-mono text-[10px] font-bold tracking-wider transition-all active:scale-95",
               filter === f.id
-                ? "bg-gradient-to-r from-holo-cyan to-holo-violet text-void shadow-[0_0_18px_rgba(53,182,255,0.35)]"
+                ? "bg-gradient-to-r from-holo-cyan to-holo-violet text-void shadow-[0_0_18px_rgba(61,107,232,0.35)]"
                 : "border border-white/10 bg-white/4 text-white/50 hover:text-white",
             )}
           >

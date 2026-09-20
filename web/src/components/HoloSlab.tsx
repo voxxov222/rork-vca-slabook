@@ -24,7 +24,7 @@ const ENV_BG: Record<Environment, string> = {
 
 const LABEL_STYLES: Record<LabelStyle, { frame: string; title: string; accent: string }> = {
   classic: { frame: "border-white/15 bg-black/80", title: "text-white", accent: "text-holo-cyan" },
-  neon: { frame: "border-holo-cyan/50 bg-[rgba(6,20,34,0.9)] shadow-[0_0_18px_rgba(53,182,255,0.25)]", title: "text-holo-cyan", accent: "text-holo-violet" },
+  neon: { frame: "border-holo-cyan/50 bg-[rgba(6,20,34,0.9)] shadow-[0_0_18px_rgba(61,107,232,0.25)]", title: "text-holo-cyan", accent: "text-holo-violet" },
   gold: { frame: "border-holo-gold/50 bg-[rgba(24,18,6,0.9)] shadow-[0_0_18px_rgba(255,179,64,0.22)]", title: "text-holo-gold", accent: "text-holo-gold" },
 };
 
@@ -155,7 +155,7 @@ export default function HoloSlab({ card, grade, serial, config, className }: Hol
                   style={{
                     opacity: config.holo / 100,
                     background:
-                      "conic-gradient(from 180deg at 50% 50%, rgba(53,182,255,0.5), rgba(126,240,255,0.45), rgba(143,160,187,0.4), rgba(255,179,64,0.35), rgba(53,182,255,0.5))",
+                      "conic-gradient(from 180deg at 50% 50%, rgba(61,107,232,0.5), rgba(232,57,74,0.45), rgba(143,160,187,0.4), rgba(255,179,64,0.35), rgba(61,107,232,0.5))",
                     animation: "holo-shift 6s ease-in-out infinite",
                     backgroundSize: "300% 300%",
                   }}
@@ -165,23 +165,40 @@ export default function HoloSlab({ card, grade, serial, config, className }: Hol
               </div>
             </div>
 
-            {/* VCA label */}
-            <div className={`absolute inset-x-2.5 bottom-2.5 rounded-lg border px-2.5 py-1.5 backdrop-blur-md ${label.frame}`}>
-              <div className="flex items-center justify-between">
-                <span className={`font-display text-[11px] font-extrabold tracking-[0.22em] ${label.title}`}>VCA</span>
-                {gradeText && <span className={`font-mono text-[10px] font-bold ${label.accent}`}>{gradeText}</span>}
+            {/* VCA label — the official Verified Card Authority logo plate, holographic */}
+            <div className={`absolute inset-x-2.5 bottom-2.5 h-[64px] overflow-hidden rounded-lg border shadow-[0_0_20px_rgba(61,107,232,0.3)] ${label.frame}`}>
+              <img
+                src="/vca-label.png"
+                alt="VCA — Verified Card Authority"
+                draggable={false}
+                className="absolute inset-0 h-full w-full object-cover object-bottom"
+              />
+              {/* holographic foil over the label */}
+              <div
+                className="pointer-events-none absolute inset-0 mix-blend-color-dodge"
+                style={{
+                  opacity: config.holo / 120,
+                  background:
+                    "conic-gradient(from 180deg at 50% 50%, rgba(61,107,232,0.55), rgba(232,57,74,0.5), rgba(240,244,255,0.4), rgba(143,160,187,0.45), rgba(61,107,232,0.55))",
+                  animation: "holo-shift 6s ease-in-out infinite",
+                  backgroundSize: "300% 300%",
+                }}
+              />
+              {/* glass reflection streak */}
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,rgba(255,255,255,0.22)_0%,transparent_30%,transparent_70%,rgba(255,255,255,0.1)_100%)]" />
+              {/* dynamic cert rows over a readable scrim */}
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[rgba(3,6,16,0.94)] via-[rgba(3,6,16,0.6)] to-transparent px-2 pb-1 pt-3">
+                <div className="flex items-baseline justify-between gap-1">
+                  <span className="truncate font-display text-[9px] font-extrabold uppercase tracking-wide text-white">{card.name.toUpperCase()}</span>
+                  <span className="shrink-0 font-display text-[11px] font-black tracking-wide text-holo-gold drop-shadow-[0_0_6px_rgba(255,179,64,0.5)]">{gradeText || ""}</span>
+                </div>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="truncate text-[7px] font-medium text-white/60">
+                    {card.number} · {card.set.toUpperCase()}
+                  </span>
+                  {serial && <span className="shrink-0 font-mono text-[7px] tracking-wider text-white/70">{serial}</span>}
+                </div>
               </div>
-              <div className="mt-0.5 flex items-baseline justify-between gap-1">
-                <span className="truncate font-display text-[10px] font-bold text-white/90">{card.name.toUpperCase()}</span>
-                <span className="shrink-0 text-[8px] font-medium text-white/50">{card.set.toUpperCase()}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[8px] text-white/50">
-                  {card.number} · {card.rarity.toUpperCase()}
-                </span>
-                {grade === "VCA 10" && <span className="text-[7px] font-bold tracking-widest text-holo-gold/90">GEM MINT</span>}
-              </div>
-              {serial && <p className="mt-0.5 font-mono text-[8px] tracking-wider text-holo-cyan/90">{serial}</p>}
             </div>
           </div>
 
@@ -191,16 +208,23 @@ export default function HoloSlab({ card, grade, serial, config, className }: Hol
             style={{ transform: "rotateY(180deg) translateZ(9px)", background: "linear-gradient(160deg, #0A1020, #060A16)" }}
           >
             <div className="flex h-full flex-col items-center justify-center gap-3">
-              <div className="relative h-24 w-24">
-                <div className="absolute inset-0 animate-spin-slow rounded-full border border-holo-cyan/40 border-t-holo-magenta border-r-holo-gold" />
-                <div className="absolute inset-2 flex items-center justify-center rounded-full bg-panel">
-                  <span className="font-display text-lg font-extrabold tracking-[0.2em] holo-text">VCA</span>
-                </div>
+              <div className="relative h-28 w-16 overflow-hidden rounded-lg ring-1 ring-white/25">
+                <img src="/vca-label.png" alt="VCA" draggable={false} className="absolute inset-0 h-full w-full object-cover" />
+                <div
+                  className="pointer-events-none absolute inset-0 mix-blend-color-dodge"
+                  style={{
+                    opacity: config.holo / 130,
+                    background:
+                      "conic-gradient(from 180deg at 50% 50%, rgba(61,107,232,0.5), rgba(232,57,74,0.45), rgba(240,244,255,0.35), rgba(143,160,187,0.4), rgba(61,107,232,0.5))",
+                    animation: "holo-shift 6s ease-in-out infinite",
+                    backgroundSize: "300% 300%",
+                  }}
+                />
               </div>
-              <p className="px-6 text-center font-mono text-[8px] leading-relaxed text-white/40">
-                VERIFIED COLLECTIBLE AUTHENTICATION
+              <p className="px-6 text-center font-display text-[9px] font-extrabold uppercase tracking-[0.2em] text-white/60">
+                Verified Card Authority
                 <br />
-                {serial ?? "AWAITING ISSUANCE"}
+                <span className="font-mono text-[8px] font-normal tracking-wider text-white/40">{serial ?? "AWAITING ISSUANCE"}</span>
               </p>
               <div className="h-8 w-28 rounded bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.7)_0_2px,transparent_2px_5px)] opacity-60" />
             </div>

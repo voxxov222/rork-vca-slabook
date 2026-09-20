@@ -215,3 +215,54 @@ export interface ScanHistoryRecord {
   verifiedProduct: boolean;
   createdAt: string;
 }
+
+/* ------------------------------ grading submissions ------------------------------ */
+
+/** Lifecycle of a physical card mailed in for VCA grading. */
+export type SubmissionStatus =
+  | "SUBMITTED"
+  | "RECEIVED"
+  | "INSPECTING"
+  | "GRADING"
+  | "GRADED"
+  | "SHIPPED";
+
+export type ServiceTier = "bulk" | "regular" | "express" | "walkthrough";
+
+export interface ServiceTierDef {
+  id: ServiceTier;
+  name: string;
+  price: number;
+  turnaround: string;
+  maxDeclaredValue: number;
+  blurb: string;
+}
+
+export interface SubmissionEvent {
+  status: SubmissionStatus;
+  at: string;
+  note?: string;
+}
+
+export interface GradingSubmission {
+  /** Tracking id, e.g. VCA-SUB-26-0007. */
+  id: string;
+  cardId: string;
+  cardName: string;
+  cardSet: string;
+  cardArt: string;
+  userId: string;
+  ownerName: string;
+  tier: ServiceTier;
+  declaredCondition: string;
+  declaredValue: number;
+  notes: string;
+  contactEmail: string;
+  shippingName: string;
+  shippingAddress: string;
+  status: SubmissionStatus;
+  createdAt: string;
+  events: SubmissionEvent[];
+  finalGrade: GradeLabel | null;
+  certSerial: string | null;
+}

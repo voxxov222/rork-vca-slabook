@@ -175,7 +175,7 @@ function FilterChip({ active, onClick, label }: { active: boolean; onClick: () =
       className={cn(
         "shrink-0 rounded-full border px-3.5 py-1.5 font-mono text-[10px] font-bold tracking-wider transition-all active:scale-95",
         active
-          ? "border-holo-cyan/60 bg-holo-cyan/15 text-holo-cyan shadow-[0_0_14px_rgba(53,182,255,0.3)]"
+          ? "border-holo-cyan/60 bg-holo-cyan/15 text-holo-cyan shadow-[0_0_14px_rgba(61,107,232,0.3)]"
           : "border-white/10 bg-white/4 text-white/45 hover:border-white/25 hover:text-white/80",
       )}
     >

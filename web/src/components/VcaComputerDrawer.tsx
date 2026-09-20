@@ -192,7 +192,7 @@ export default function VcaComputerDrawer() {
       <button
         onClick={() => setOpen(true)}
         aria-label="Open VCA Computer tools"
-        className="fixed bottom-24 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-holo-cyan via-holo-violet to-holo-magenta shadow-[0_0_30px_rgba(53,182,255,0.45)] transition-transform hover:scale-105 active:scale-90 lg:bottom-6 lg:right-6"
+        className="fixed bottom-24 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-holo-cyan via-holo-violet to-holo-magenta shadow-[0_0_30px_rgba(61,107,232,0.45)] transition-transform hover:scale-105 active:scale-90 lg:bottom-6 lg:right-6"
       >
         <Bot className="h-6 w-6 text-void" strokeWidth={2.4} />
       </button>

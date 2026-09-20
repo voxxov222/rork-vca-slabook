@@ -10,6 +10,7 @@ import {
   Home,
   Layers,
   MessageCircle,
+  PackageOpen,
   ScanLine,
   Search,
   Sparkles,
@@ -30,6 +31,7 @@ const NAV = [
   { to: "/scanner", label: "Scanner", icon: ScanLine },
   { to: "/collection", label: "Collection", icon: Layers },
   { to: "/slab-creator", label: "Slab Creator", icon: Gem },
+  { to: "/submit", label: "Grading", icon: PackageOpen },
   { to: "/discover", label: "Discover", icon: Compass },
   { to: "/set-index", label: "Set Index", icon: BarChart3 },
   { to: "/marketplace", label: "Marketplace", icon: Store },
@@ -62,11 +64,12 @@ const NOTIF_ICON = {
 function Logo() {
   return (
     <Link to="/home" className="flex items-center gap-2.5">
-      <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-holo-cyan/30 via-holo-violet/25 to-holo-magenta/30 ring-1 ring-white/20">
-        <span className="font-display text-xs font-extrabold tracking-widest holo-text">VCA</span>
+      <span className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl ring-1 ring-white/25">
+        <img src="/vca-label.png" alt="VCA — Verified Card Authority" className="h-full w-full object-cover" draggable={false} />
+        <span className="pointer-events-none absolute inset-0 mix-blend-color-dodge" style={{ background: "linear-gradient(120deg, rgba(61,107,232,0.35), transparent 45%, rgba(232,57,74,0.3))" }} />
       </span>
-      <span className="font-display text-sm font-bold tracking-wide">
-        <span className="text-white">VCA</span> <span className="holo-text">SLABOOK</span>
+      <span className="font-display text-sm font-extrabold uppercase tracking-wide">
+        <span className="text-white">Verified Card</span> <span className="holo-text">Authority</span>
       </span>
     </Link>
   );
@@ -274,7 +277,7 @@ export default function AppShell() {
                 <Link
                   to="/scanner"
                   aria-label="Open VCA Card Scanner"
-                  className="absolute -top-7 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-holo-cyan via-holo-violet to-holo-magenta shadow-[0_0_30px_rgba(53,182,255,0.5)] transition-transform active:scale-90"
+                  className="absolute -top-7 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-holo-cyan via-holo-violet to-holo-magenta shadow-[0_0_30px_rgba(61,107,232,0.5)] transition-transform active:scale-90"
                 >
                   <ScanLine className="h-6 w-6 text-void" strokeWidth={2.5} />
                 </Link>

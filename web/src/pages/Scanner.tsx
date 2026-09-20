@@ -237,7 +237,7 @@ function CameraCapture({ onCapture, onCancel }: { onCapture: (dataUrl: string) =
           disabled={!ready}
           aria-label="Capture card photo"
           className={cn(
-            "flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-holo-cyan to-holo-violet shadow-[0_0_30px_rgba(53,182,255,0.5)] transition-transform active:scale-90",
+            "flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-holo-cyan to-holo-violet shadow-[0_0_30px_rgba(61,107,232,0.5)] transition-transform active:scale-90",
             !ready && "opacity-40",
           )}
         >
@@ -503,7 +503,7 @@ export default function Scanner() {
             </div>
             {/* scan line */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
-              <div className="absolute left-0 h-0.5 w-full animate-scanline bg-gradient-to-r from-transparent via-holo-cyan to-transparent shadow-[0_0_18px_4px_rgba(53,182,255,0.6)]" />
+              <div className="absolute left-0 h-0.5 w-full animate-scanline bg-gradient-to-r from-transparent via-holo-cyan to-transparent shadow-[0_0_18px_4px_rgba(61,107,232,0.6)]" />
             </div>
           </div>
           <p className="mt-6 text-center font-mono text-[11px] tracking-wider text-holo-cyan">{SCAN_STEPS[step]}</p>

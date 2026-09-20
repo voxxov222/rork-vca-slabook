@@ -3,39 +3,40 @@
 @tailwind utilities;
 
 /* ============================================================
-   VCA HOLOGRAPHIC — design system for VCA Slabook
-   Premium dark interface · glassmorphism · holographic accents
+   VCA — VERIFIED CARD AUTHORITY
+   Red / White / Blue professional sports grading theme
+   Deep navy field · VCA blue · VCA red · chrome white
    ============================================================ */
 
 @layer base {
   :root {
-    --background: 222 50% 3%;
+    --background: 224 60% 4%;
     --foreground: 210 40% 96%;
 
-    --card: 228 42% 7%;
+    --card: 226 48% 7%;
     --card-foreground: 210 40% 96%;
 
     --popover: 227 45% 6%;
     --popover-foreground: 210 40% 96%;
 
-    --primary: 204 100% 60%;
-    --primary-foreground: 228 47% 5%;
+    --primary: 224 76% 57%;
+    --primary-foreground: 210 40% 98%;
 
     --secondary: 226 40% 13%;
     --secondary-foreground: 210 40% 96%;
 
     --muted: 226 38% 12%;
-    --muted-foreground: 219 25% 62%;
+    --muted-foreground: 218 22% 64%;
 
     --accent: 226 40% 14%;
     --accent-foreground: 210 40% 96%;
 
-    --destructive: 350 100% 65%;
+    --destructive: 352 78% 52%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 216 45% 14%;
-    --input: 216 45% 14%;
-    --ring: 204 100% 60%;
+    --border: 224 42% 15%;
+    --input: 224 42% 15%;
+    --ring: 224 76% 57%;
 
     --radius: 1rem;
   }
@@ -51,15 +52,15 @@
   body {
     @apply bg-void text-foreground font-sans antialiased;
     background-image:
-      radial-gradient(1200px 700px at 78% -8%, rgba(10, 60, 130, 0.28), transparent 60%),
-      radial-gradient(900px 600px at 6% 10%, rgba(53, 182, 255, 0.06), transparent 55%),
-      radial-gradient(800px 600px at 50% 112%, rgba(126, 240, 255, 0.045), transparent 60%);
+      radial-gradient(1200px 700px at 80% -8%, rgba(30, 70, 190, 0.30), transparent 60%),
+      radial-gradient(900px 620px at 4% 8%, rgba(190, 30, 45, 0.10), transparent 55%),
+      radial-gradient(820px 620px at 50% 114%, rgba(61, 107, 232, 0.07), transparent 60%);
     background-attachment: fixed;
     overflow-x: hidden;
   }
 
   ::selection {
-    background: rgba(53, 182, 255, 0.3);
+    background: rgba(61, 107, 232, 0.4);
   }
 
   ::-webkit-scrollbar {
@@ -70,33 +71,33 @@
     background: rgba(255, 255, 255, 0.02);
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(120, 150, 220, 0.18);
+    background: rgba(110, 140, 220, 0.2);
     border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(53, 182, 255, 0.4);
+    background: rgba(61, 107, 232, 0.5);
   }
 }
 
 @layer components {
   /* Frosted glass surface */
   .glass {
-    background: linear-gradient(160deg, rgba(90, 190, 255, 0.07), rgba(16, 22, 34, 0.4) 45%, rgba(255, 255, 255, 0.012));
-    border: 1px solid rgba(90, 190, 255, 0.14);
+    background: linear-gradient(160deg, rgba(90, 130, 240, 0.08), rgba(12, 17, 34, 0.42) 45%, rgba(255, 255, 255, 0.012));
+    border: 1px solid rgba(96, 130, 230, 0.16);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
   }
 
   .glass-strong {
-    background: linear-gradient(160deg, rgba(90, 190, 255, 0.1), rgba(16, 22, 34, 0.5) 50%, rgba(255, 255, 255, 0.015));
-    border: 1px solid rgba(90, 190, 255, 0.2);
+    background: linear-gradient(160deg, rgba(90, 130, 240, 0.11), rgba(12, 17, 34, 0.52) 50%, rgba(255, 255, 255, 0.015));
+    border: 1px solid rgba(96, 130, 230, 0.22);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
   }
 
-  /* Animated holographic gradient text */
+  /* Animated holographic gradient text — chrome → blue → red */
   .holo-text {
-    background: linear-gradient(110deg, #eaf2ff, #7ef0ff 35%, #35b6ff 65%, #eaf2ff);
+    background: linear-gradient(110deg, #f2f6ff, #6d95ff 30%, #e8394a 55%, #3d6be8 78%, #f2f6ff);
     background-size: 300% 300%;
     -webkit-background-clip: text;
     background-clip: text;
@@ -104,39 +105,39 @@
     animation: holo-shift 6s ease-in-out infinite;
   }
 
-  /* Holographic gradient bar / border underlay */
+  /* Signature red / white / blue racing stripe */
   .holo-bar {
-    background: linear-gradient(90deg, #35b6ff, #7ef0ff);
+    background: linear-gradient(90deg, #3d6be8 0%, #3d6be8 38%, #ffffff 38%, #ffffff 62%, #e8394a 62%, #e8394a 100%);
   }
 
   /* Gradient border card via padding trick */
   .holo-frame {
     position: relative;
     background:
-      linear-gradient(160deg, rgba(4, 6, 12, 0.96), rgba(4, 6, 12, 0.92)) padding-box,
-      linear-gradient(135deg, rgba(53, 182, 255, 0.55), rgba(126, 240, 255, 0.28) 45%, rgba(90, 190, 255, 0.4)) border-box;
+      linear-gradient(160deg, rgba(4, 7, 18, 0.96), rgba(4, 7, 18, 0.92)) padding-box,
+      linear-gradient(135deg, rgba(61, 107, 232, 0.6), rgba(232, 57, 74, 0.45) 45%, rgba(150, 175, 245, 0.4)) border-box;
     border: 1px solid transparent;
   }
 
   .glow-cyan {
-    box-shadow: 0 0 24px rgba(53, 182, 255, 0.22), 0 0 60px rgba(53, 182, 255, 0.08);
+    box-shadow: 0 0 24px rgba(61, 107, 232, 0.26), 0 0 60px rgba(61, 107, 232, 0.09);
   }
   .glow-violet {
-    box-shadow: 0 0 24px rgba(126, 240, 255, 0.2), 0 0 60px rgba(126, 240, 255, 0.07);
+    box-shadow: 0 0 24px rgba(232, 57, 74, 0.22), 0 0 60px rgba(232, 57, 74, 0.08);
   }
   .glow-magenta {
     box-shadow: 0 0 24px rgba(255, 77, 106, 0.2), 0 0 60px rgba(255, 77, 106, 0.07);
   }
 
   .text-glow-cyan {
-    text-shadow: 0 0 18px rgba(53, 182, 255, 0.55);
+    text-shadow: 0 0 18px rgba(61, 107, 232, 0.6);
   }
 
   /* Subtle animated grid backdrop */
   .grid-bg {
     background-image:
-      linear-gradient(rgba(90, 190, 255, 0.055) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(90, 190, 255, 0.055) 1px, transparent 1px);
+      linear-gradient(rgba(96, 130, 230, 0.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(96, 130, 230, 0.055) 1px, transparent 1px);
     background-size: 44px 44px;
     mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, black 30%, transparent 75%);
     -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, black 30%, transparent 75%);
@@ -146,8 +147,8 @@
   .starfield {
     background-image:
       radial-gradient(1.5px 1.5px at 18% 22%, rgba(255, 255, 255, 0.7) 50%, transparent 51%),
-      radial-gradient(1px 1px at 62% 12%, rgba(120, 220, 255, 0.8) 50%, transparent 51%),
-      radial-gradient(1px 1px at 84% 38%, rgba(255, 170, 255, 0.7) 50%, transparent 51%),
+      radial-gradient(1px 1px at 62% 12%, rgba(130, 170, 255, 0.8) 50%, transparent 51%),
+      radial-gradient(1px 1px at 84% 38%, rgba(255, 130, 140, 0.7) 50%, transparent 51%),
       radial-gradient(1.5px 1.5px at 34% 68%, rgba(255, 255, 255, 0.5) 50%, transparent 51%),
       radial-gradient(1px 1px at 76% 78%, rgba(140, 160, 255, 0.8) 50%, transparent 51%),
       radial-gradient(1px 1px at 8% 84%, rgba(255, 255, 255, 0.6) 50%, transparent 51%);

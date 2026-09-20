@@ -4,7 +4,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import type { LivePrices } from "@/lib/prices";
 import type { CatalogCard } from "@/lib/types";
 
-const CYAN = "#35B6FF";
+const CYAN = "#3D6BE8";
 const MINT = "#43F5B0";
 const RED = "#FF4D6A";
 const DAY = 24 * 60 * 60;
@@ -139,7 +139,7 @@ export default function RawTrendChart({ card, live }: RawTrendChartProps) {
       <div className="h-52 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={series} margin={{ top: 6, right: 8, left: -14, bottom: 0 }}>
-            <CartesianGrid stroke="rgba(90,190,255,0.08)" vertical={false} />
+            <CartesianGrid stroke="rgba(96,130,230,0.08)" vertical={false} />
             <XAxis
               dataKey="t"
               type="number"
@@ -163,7 +163,7 @@ export default function RawTrendChart({ card, live }: RawTrendChartProps) {
             <Tooltip
               contentStyle={{
                 background: "rgba(9,13,22,0.95)",
-                border: "1px solid rgba(53,182,255,0.3)",
+                border: "1px solid rgba(61,107,232,0.3)",
                 borderRadius: 12,
                 fontSize: 12,
                 color: "#fff",

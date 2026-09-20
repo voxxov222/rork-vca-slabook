@@ -1,7 +1,7 @@
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip } from "recharts";
 
-const CYAN = "#35B6FF";
-const ICE = "#7EF0FF";
+const CYAN = "#3D6BE8";
+const ICE = "#E8394A";
 
 export interface ForensicSubgrades {
   centering: number;
@@ -33,7 +33,7 @@ export default function ForensicRadar({ subgrades }: ForensicRadarProps) {
     <div className="h-64 w-full sm:h-72">
       <ResponsiveContainer width="100%" height="100%">
         <RadarChart data={data} cx="50%" cy="50%" outerRadius="74%">
-          <PolarGrid stroke="rgba(90,190,255,0.16)" />
+          <PolarGrid stroke="rgba(96,130,230,0.16)" />
           <PolarAngleAxis
             dataKey="category"
             tick={{ fill: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: 700 }}
@@ -42,7 +42,7 @@ export default function ForensicRadar({ subgrades }: ForensicRadarProps) {
           <Tooltip
             contentStyle={{
               background: "rgba(9,13,22,0.95)",
-              border: "1px solid rgba(53,182,255,0.3)",
+              border: "1px solid rgba(61,107,232,0.3)",
               borderRadius: 12,
               fontSize: 12,
               color: "#fff",

@@ -475,7 +475,7 @@ export default function CardInspectionLab() {
                 className="pointer-events-none absolute inset-0"
                 style={{
                   backgroundImage:
-                    "linear-gradient(rgba(126,240,255,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(126,240,255,0.14) 1px, transparent 1px)",
+                    "linear-gradient(rgba(232,57,74,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(232,57,74,0.14) 1px, transparent 1px)",
                   backgroundSize: "12.5% 12.5%",
                 }}
               />

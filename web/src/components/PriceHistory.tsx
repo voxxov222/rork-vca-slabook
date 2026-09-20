@@ -31,24 +31,24 @@ export default function PriceHistory({ card, live }: PriceHistoryProps) {
           <AreaChart data={data} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
             <defs>
               <linearGradient id={`grad-${card.id}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#35B6FF" stopOpacity={0.45} />
-                <stop offset="100%" stopColor="#35B6FF" stopOpacity={0} />
+                <stop offset="0%" stopColor="#3D6BE8" stopOpacity={0.45} />
+                <stop offset="100%" stopColor="#3D6BE8" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke="rgba(90,190,255,0.08)" vertical={false} />
+            <CartesianGrid stroke="rgba(96,130,230,0.08)" vertical={false} />
             <XAxis dataKey="month" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 10 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${v}`} />
             <Tooltip
               contentStyle={{
                 background: "rgba(9,13,22,0.95)",
-                border: "1px solid rgba(53,182,255,0.3)",
+                border: "1px solid rgba(61,107,232,0.3)",
                 borderRadius: 12,
                 fontSize: 12,
                 color: "#fff",
               }}
               formatter={(value: number | string) => [`$${Number(value).toLocaleString("en-US")}`, metric]}
             />
-            <Area type="monotone" dataKey="value" stroke="#35B6FF" strokeWidth={2} fill={`url(#grad-${card.id})`} dot={false} activeDot={{ r: 4, fill: "#FF4D6A" }} />
+            <Area type="monotone" dataKey="value" stroke="#3D6BE8" strokeWidth={2} fill={`url(#grad-${card.id})`} dot={false} activeDot={{ r: 4, fill: "#FF4D6A" }} />
           </AreaChart>
         </ResponsiveContainer>
       </div>

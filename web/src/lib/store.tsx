@@ -29,14 +29,17 @@ import type {
   Comment,
   Conversation,
   GradeLabel,
+  GradingSubmission,
   MarketplaceAccount,
   Post,
   ProfileBlockDef,
   ProfileBlockKind,
   ProfileMediaItem,
   ScanHistoryRecord,
+  ServiceTier,
   SlabRecord,
   SlabStatus,
+  SubmissionStatus,
   User,
   VcaNotification,
   VaultSlabRow,
@@ -63,6 +66,21 @@ interface VcaStore {
   lastScan: ScanResult | null;
   marketplace: Record<string, MarketplaceAccount>;
   slabDraftCardId: string | null;
+  /* grading submissions */
+  submissions: GradingSubmission[];
+  createSubmission: (input: {
+    cardId: string;
+    tier: ServiceTier;
+    declaredCondition: string;
+    declaredValue: number;
+    notes: string;
+    contactEmail: string;
+    shippingName: string;
+    shippingAddress: string;
+  }) => GradingSubmission;
+  updateSubmissionStatus: (id: string, status: SubmissionStatus, note?: string) => void;
+  /** Admin OS: certify a submission — mints the cert serial + physical slab record. */
+  certifySubmission: (id: string, grade: GradeLabel) => void;
   /* serial generation */
   nextDigitalSerial: () => string;
   nextPhysicalSerial: () => string;
@@ -135,6 +153,27 @@ const DEFAULT_BLOCKS: ProfileBlockDef[] = [
   { id: "b-activity", kind: "activity" },
 ];
 
+const SUBMISSIONS_KEY = "vca-submissions";
+
+const loadSubmissions = (): GradingSubmission[] => {
+  try {
+    const raw = localStorage.getItem(SUBMISSIONS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as GradingSubmission[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const persistSubmissions = (list: GradingSubmission[]) => {
+  try {
+    localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(list));
+  } catch {
+    // storage unavailable — session-only
+  }
+};
+
 const slabValue = (card: CatalogCard | undefined, grade: GradeLabel | null): number => {
   if (!card) return 0;
   if (grade === "VCA 10") return card.prices.g10;
@@ -154,6 +193,8 @@ export function VcaProvider({ children }: { children: ReactNode }) {
   const [connections, setConnections] = useState<Record<string, boolean>>({ "u-guru": true });
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
   const [slabDraftCardId, setSlabDraftCardId] = useState<string | null>(null);
+  const [submissions, setSubmissions] = useState<GradingSubmission[]>(loadSubmissions);
+  const submissionCounter = useMemo(() => ({ n: 0 }), []);
   const [marketplace, setMarketplace] = useState<Record<string, MarketplaceAccount>>({
     ebay: {
       platformId: "ebay",
@@ -331,6 +372,126 @@ export function VcaProvider({ children }: { children: ReactNode }) {
       pushNotification({ kind: "grade", text: `${c?.name ?? "Card"} certified ${grade} — physical NFC slab ${record.serial} activated.`, cardId: record.cardId });
     },
     [slabs, cardById, pushNotification],
+  );
+
+  /* ------------------------------ grading submissions ------------------------------ */
+
+  const pushSubmission = useCallback((list: GradingSubmission[]) => {
+    setSubmissions(list);
+    persistSubmissions(list);
+    return list;
+  }, []);
+
+  const createSubmission = useCallback(
+    (input: {
+      cardId: string;
+      tier: ServiceTier;
+      declaredCondition: string;
+      declaredValue: number;
+      notes: string;
+      contactEmail: string;
+      shippingName: string;
+      shippingAddress: string;
+    }) => {
+      if (submissionCounter.n === 0) {
+        // resume the counter above any existing submissions so ids stay unique
+        const highest = submissions.reduce((max, s) => {
+          const m = s.id.match(/(\d+)$/);
+          return m ? Math.max(max, parseInt(m[1], 10)) : max;
+        }, 0);
+        submissionCounter.n = highest;
+      }
+      submissionCounter.n += 1;
+      const card = cardById(input.cardId);
+      const now = new Date().toISOString();
+      const sub: GradingSubmission = {
+        id: `VCA-SUB-26-${fmt(submissionCounter.n)}`,
+        cardId: input.cardId,
+        cardName: card?.name ?? "Unknown card",
+        cardSet: card?.set ?? "—",
+        cardArt: card?.artUrl ?? "",
+        userId: CURRENT_USER_ID,
+        ownerName: currentUser.displayName,
+        tier: input.tier,
+        declaredCondition: input.declaredCondition,
+        declaredValue: input.declaredValue,
+        notes: input.notes,
+        contactEmail: input.contactEmail,
+        shippingName: input.shippingName,
+        shippingAddress: input.shippingAddress,
+        status: "SUBMITTED",
+        createdAt: now,
+        events: [{ status: "SUBMITTED", at: now, note: "Submission created — mail your card to the VCA grading facility." }],
+        finalGrade: null,
+        certSerial: null,
+      };
+      pushSubmission([sub, ...submissions]);
+      pushNotification({ kind: "grade", text: `Grading submission ${sub.id} created for ${sub.cardName}.`, cardId: sub.cardId });
+      return sub;
+    },
+    [cardById, currentUser.displayName, pushNotification, pushSubmission, submissionCounter, submissions],
+  );
+
+  const updateSubmissionStatus = useCallback(
+    (id: string, status: SubmissionStatus, note?: string) => {
+      const now = new Date().toISOString();
+      const next = submissions.map((s) =>
+        s.id === id
+          ? { ...s, status, events: [...s.events, { status, at: now, ...(note ? { note } : {}) }] }
+          : s,
+      );
+      pushSubmission(next);
+      const sub = next.find((s) => s.id === id);
+      if (sub) pushNotification({ kind: "grade", text: `${sub.id} · ${sub.cardName} → ${status}`, cardId: sub.cardId });
+    },
+    [pushNotification, pushSubmission, submissions],
+  );
+
+  const certifySubmission = useCallback(
+    (id: string, grade: GradeLabel) => {
+      const sub = submissions.find((s) => s.id === id);
+      if (!sub || sub.status === "GRADED" || sub.status === "SHIPPED") return;
+      const serial = nextPhysicalSerial();
+      const now = new Date().toISOString();
+      const next = submissions.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              status: "GRADED" as SubmissionStatus,
+              finalGrade: grade,
+              certSerial: serial,
+              events: [...s.events, { status: "GRADED" as SubmissionStatus, at: now, note: `Certified ${grade} · cert ${serial}` }],
+            }
+          : s,
+      );
+      pushSubmission(next);
+      const record: SlabRecord = {
+        id: uid("s"),
+        serial,
+        kind: "physical",
+        cardId: sub.cardId,
+        grade,
+        ownerName: sub.ownerName,
+        createdAt: now.slice(0, 10),
+      };
+      setSlabs((prev) => [record, ...prev]);
+      const c = cardById(sub.cardId);
+      void upsertVaultSlab({
+        clientId: record.id,
+        serial,
+        kind: "physical",
+        cardId: sub.cardId,
+        cardName: sub.cardName,
+        cardSet: sub.cardSet,
+        cardArt: sub.cardArt || null,
+        grade,
+        value: slabValue(c, grade),
+        ownerName: sub.ownerName,
+        mintedAt: now,
+      });
+      pushNotification({ kind: "grade", text: `${sub.cardName} certified ${grade} — cert ${serial} minted.`, cardId: sub.cardId });
+    },
+    [cardById, nextPhysicalSerial, pushNotification, pushSubmission, submissions],
   );
 
   const addPost = useCallback(
@@ -626,6 +787,10 @@ export function VcaProvider({ children }: { children: ReactNode }) {
     lastScan,
     marketplace,
     slabDraftCardId,
+    submissions,
+    createSubmission,
+    updateSubmissionStatus,
+    certifySubmission,
     nextDigitalSerial,
     nextPhysicalSerial,
     addToCollection,

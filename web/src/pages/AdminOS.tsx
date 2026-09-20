@@ -5,10 +5,13 @@ import {
   Bot,
   BrainCircuit,
   Database,
+  FileStack,
   Gem,
   LogOut,
   Boxes,
   Microscope,
+  Package,
+  PackageCheck,
   Puzzle,
   Radar,
   RefreshCw,
@@ -16,6 +19,7 @@ import {
   ShieldCheck,
   Terminal,
   Trash2,
+  Truck,
   Users,
   Wrench,
 } from "lucide-react";
@@ -64,6 +68,7 @@ const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 type Tab =
   | "overview"
   | "cards"
+  | "submissions"
   | "grading"
   | "scans"
   | "inspection"
@@ -74,6 +79,7 @@ type Tab =
 const TABS: { id: Tab; label: string; icon: typeof Activity }[] = [
   { id: "overview", label: "Overview", icon: Activity },
   { id: "cards", label: "Card Database", icon: Database },
+  { id: "submissions", label: "Submissions", icon: FileStack },
   { id: "grading", label: "Grading Queue", icon: Gem },
   { id: "scans", label: "Scan Forensics", icon: ScanLine },
   { id: "inspection", label: "Card Inspection", icon: Microscope },
@@ -255,6 +261,7 @@ function TabContent() {
       <div className="mt-4">
         {tab === "overview" && <OverviewTab />}
         {tab === "cards" && <CardsTab />}
+        {tab === "submissions" && <SubmissionsTab />}
         {tab === "grading" && <GradingTab />}
         {tab === "scans" && <ScansTab />}
         {tab === "inspection" && <CardInspectionLab />}
@@ -861,5 +868,151 @@ function PriceSyncPanel() {
         <p className="mt-2 font-mono text-[10px] text-white/40">{db.syncLogs[0].summary}</p>
       )}
     </section>
+  );
+}
+
+/* --------------------------- submissions intake --------------------------- */
+
+const SUBMISSION_TINT: Record<string, string> = {
+  SUBMITTED: "text-holo-violet bg-holo-violet/15 border-holo-violet/30",
+  RECEIVED: "text-holo-cyan bg-holo-cyan/15 border-holo-cyan/30",
+  INSPECTING: "text-holo-gold bg-holo-gold/15 border-holo-gold/30",
+  GRADING: "text-holo-gold bg-holo-gold/15 border-holo-gold/30",
+  GRADED: "text-holo-mint bg-holo-mint/15 border-holo-mint/30",
+  SHIPPED: "text-white bg-white/10 border-white/25",
+};
+
+function SubmissionsTab() {
+  const { submissions, updateSubmissionStatus, certifySubmission, cardById } = useVca();
+
+  const inHouse = submissions.filter((s) => s.status !== "SUBMITTED" && s.status !== "SHIPPED").length;
+  const awaiting = submissions.filter((s) => s.status === "SUBMITTED").length;
+  const shipped = submissions.filter((s) => s.status === "SHIPPED").length;
+  const declaredTotal = submissions.reduce((sum, s) => sum + s.declaredValue, 0);
+
+  return (
+    <div className="space-y-4">
+      {/* intake stats */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile icon={FileStack} label="Awaiting Accept" value={String(awaiting)} accent="text-holo-violet" sub="new submissions" />
+        <StatTile icon={Package} label="In Facility" value={String(inHouse)} accent="text-holo-cyan" sub="received → grading" />
+        <StatTile icon={PackageCheck} label="Graded" value={String(submissions.filter((s) => s.status === "GRADED").length)} accent="text-holo-mint" sub="ready to ship" />
+        <StatTile icon={Truck} label="Shipped" value={String(shipped)} accent="text-white/70" sub={`$${declaredTotal.toLocaleString("en-US")} declared`} />
+      </div>
+
+      {submissions.length === 0 && (
+        <div className="glass rounded-2xl p-8 text-center">
+          <FileStack className="mx-auto h-8 w-8 text-white/25" />
+          <p className="mt-3 font-display text-sm font-bold text-white/70">No grading submissions yet</p>
+          <p className="mt-1 text-[11px] text-white/40">
+            When collectors submit cards from the Grading page they appear here for acceptance.
+          </p>
+        </div>
+      )}
+
+      {submissions.map((s) => {
+        const c = cardById(s.cardId);
+        return (
+          <div key={s.id} className="glass rounded-2xl p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {(s.cardArt || c?.artUrl) && (
+                <img src={s.cardArt || c?.artUrl} alt={s.cardName} className="h-16 w-12 rounded-lg object-cover ring-1 ring-white/15" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[10px] font-bold tracking-wider text-holo-cyan">{s.id}</span>
+                  <span className={cn("rounded-full border px-2 py-0.5 font-mono text-[8px] font-bold tracking-wider", SUBMISSION_TINT[s.status])}>
+                    {s.status}
+                  </span>
+                  {s.certSerial && (
+                    <span className="rounded-full border border-holo-gold/40 bg-holo-gold/10 px-2 py-0.5 font-mono text-[8px] font-bold text-holo-gold">
+                      {s.finalGrade} · {s.certSerial}
+                    </span>
+                  )}
+                </div>
+                <p className="truncate font-display text-sm font-bold text-white">{s.cardName}</p>
+                <p className="truncate text-[10px] text-white/45">
+                  {s.ownerName} · {s.tier.toUpperCase()} · self-assessed {s.declaredCondition} · declared ${s.declaredValue.toLocaleString("en-US")}
+                </p>
+                <p className="truncate font-mono text-[9px] text-white/35">
+                  {s.contactEmail} · ship to: {s.shippingName}, {s.shippingAddress}
+                </p>
+                {s.notes && <p className="mt-1 line-clamp-2 text-[10px] italic text-white/40">“{s.notes}”</p>}
+              </div>
+            </div>
+
+            {/* admin actions */}
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/8 pt-3">
+              {s.status === "SUBMITTED" && (
+                <ActionButton
+                  icon={PackageCheck}
+                  label="ACCEPT INTO FACILITY"
+                  onClick={() => updateSubmissionStatus(s.id, "RECEIVED", "Package arrived at VCA facility — sealed intake scan logged.")}
+                />
+              )}
+              {s.status === "RECEIVED" && (
+                <ActionButton
+                  icon={ShieldCheck}
+                  label="START FORENSIC INSPECTION"
+                  onClick={() => updateSubmissionStatus(s.id, "INSPECTING", "Card on the bench — 25-tool forensic pipeline queued.")}
+                />
+              )}
+              {s.status === "INSPECTING" && (
+                <ActionButton
+                  icon={Gem}
+                  label="MOVE TO GRADING LINE"
+                  onClick={() => updateSubmissionStatus(s.id, "GRADING", "Final grade deliberation in progress.")}
+                />
+              )}
+              {s.status === "GRADING" && (
+                <>
+                  <span className="font-mono text-[9px] tracking-wider text-white/40">ISSUE CERT:</span>
+                  {(["VCA 10", "VCA 9", "VCA 8"] as GradeLabel[]).map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => certifySubmission(s.id, g)}
+                      className={cn(
+                        "rounded-lg px-3 py-1.5 font-mono text-[10px] font-bold transition-all active:scale-95",
+                        g === "VCA 10"
+                          ? "bg-holo-gold/20 text-holo-gold ring-1 ring-holo-gold/40 hover:bg-holo-gold/30"
+                          : "bg-white/8 text-white/75 ring-1 ring-white/15 hover:bg-white/15",
+                      )}
+                    >
+                      {g.toUpperCase()}
+                    </button>
+                  ))}
+                </>
+              )}
+              {s.status === "GRADED" && (
+                <ActionButton
+                  icon={Truck}
+                  label="MARK SHIPPED"
+                  onClick={() => updateSubmissionStatus(s.id, "SHIPPED", `Slab + cert ${s.certSerial} returned to ${s.shippingName}. Tracking emailed.`)}
+                />
+              )}
+              {s.status === "SHIPPED" && <span className="font-mono text-[9px] text-white/35">COMPLETE — no further action required.</span>}
+            </div>
+
+            {/* latest timeline note */}
+            {s.events.length > 0 && (
+              <p className="mt-2 font-mono text-[9px] text-white/35">
+                LOG · {new Date(s.events[s.events.length - 1].at).toLocaleString()} — {s.events[s.events.length - 1].note ?? s.events[s.events.length - 1].status}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ActionButton({ icon: Icon, label, onClick }: { icon: typeof Activity; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-holo-cyan to-holo-violet px-3.5 py-1.5 font-mono text-[10px] font-bold text-void transition-all hover:brightness-110 active:scale-95"
+    >
+      <Icon className="h-3.5 w-3.5" /> {label}
+    </button>
   );
 }

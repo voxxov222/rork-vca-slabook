@@ -248,7 +248,7 @@ function PortfolioDashboard({ slabs, items }: { slabs: SlabRecord[]; items: Coll
     labelStyle: featured?.grade === "VCA 10" ? "gold" : "classic",
     holo: 72,
     environment: "void",
-    lightTint: "#35B6FF",
+    lightTint: "#3D6BE8",
     cardOffset: 0,
     showGrade: true,
     autoSpin: true,
