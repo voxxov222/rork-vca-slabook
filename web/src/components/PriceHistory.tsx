@@ -16,7 +16,8 @@ export default function PriceHistory({ card, live }: PriceHistoryProps) {
         value: pt.p,
       }))
     : card.history;
-  const metric = useLive ? "LIVE MARKET" : card.historyMetric;
+  const metric = 'PSA 10 COMPARISON';
+  if (!useLive) return <section className="glass rounded-2xl p-5"><h3 className="font-bold">PSA price history</h3><p className="mt-3 text-sm text-muted-foreground">No reliable history is available for this printing. No synthetic trend is shown.</p></section>;
 
   return (
     <div className="glass rounded-2xl p-4 sm:p-5">
@@ -36,8 +37,8 @@ export default function PriceHistory({ card, live }: PriceHistoryProps) {
               </linearGradient>
             </defs>
             <CartesianGrid stroke="rgba(96,130,230,0.08)" vertical={false} />
-            <XAxis dataKey="month" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 10 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${v}`} />
+            <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: "#64748b", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${v}`} />
             <Tooltip
               contentStyle={{
                 background: "rgba(9,13,22,0.95)",

@@ -123,9 +123,9 @@ function CardPickRow({ card, selected, onPick }: { card: CatalogCard; selected: 
 }
 
 export default function Submit() {
-  const { myItems, cardById, createSubmission, submissions, currentUser } = useVca();
+  const { myItems, cardById, createSubmission, submissions, currentUser, submissionPending, submissionsError } = useVca();
   const [step, setStep] = useState(0);
-  const [cardId, setCardId] = useState<string | null>(null);
+  const [cardId, setCardId] = useState<string | null>(new URLSearchParams(window.location.search).get('card'));
   const [query, setQuery] = useState("");
   const [condition, setCondition] = useState<string>("Near Mint");
   const [declaredValue, setDeclaredValue] = useState<number>(0);
@@ -142,7 +142,7 @@ export default function Submit() {
   /* Cards the user can submit: owned collection items first, then catalog search. */
   const owned = useMemo(() => {
     const ids = new Set(myItems().map((i) => i.cardId));
-    return CATALOG.filter((c) => ids.has(c.id));
+    return [...ids].map(id => cardById(id)).filter((c): c is CatalogCard => Boolean(c));
   }, [myItems]);
 
   const searchResults = useMemo(() => {
@@ -151,15 +151,17 @@ export default function Submit() {
     return CATALOG.filter((c) => c.name.toLowerCase().includes(q) || c.set.toLowerCase().includes(q)).slice(0, 6);
   }, [query]);
 
-  const mySubs = submissions;
+  const mySubs = submissions.filter(s => s.userId === currentUser.id);
 
-  const submit = () => {
+  const submit = async () => {
+    if (submissionPending) return;
+    try {
     if (!card) return;
     if (declaredValue > activeTier.maxDeclaredValue) {
       toast.error(`Declared value exceeds the ${activeTier.name} limit (${usd(activeTier.maxDeclaredValue)}).`);
       return;
     }
-    const sub = createSubmission({
+    const sub = await createSubmission({
       cardId: card.id,
       tier,
       declaredCondition: condition,
@@ -170,10 +172,11 @@ export default function Submit() {
       shippingAddress,
     });
     setConfirmation(sub.id);
-    toast.success(`Submission ${sub.id} created — check your email for the shipping label.`);
+    toast.success('Grading request saved. No payment has been collected.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not save the request. Please retry.'); }
   };
 
-  const detailsValid = contactEmail.includes("@") && shippingName.trim().length > 1 && shippingAddress.trim().length > 5;
+  const detailsValid = contactEmail.includes("@") && shippingName.trim().length > 1 && shippingAddress.trim().length >= 10 && declaredValue > 0;
 
   /* ------------------------------- confirmation ------------------------------- */
   if (confirmation) {
@@ -189,9 +192,7 @@ export default function Submit() {
             <p className="mt-4 font-mono text-[10px] font-bold tracking-[0.3em] text-holo-cyan">SUBMISSION CONFIRMED</p>
             <h1 className="mt-1 font-display text-3xl font-black tracking-tight text-white">{confirmation}</h1>
             <p className="mx-auto mt-2 max-w-sm text-[12px] leading-relaxed text-white/55">
-              Package your card in a penny sleeve + card saver, apply the prepaid label we emailed to{" "}
-              <span className="text-white/80">{sub?.contactEmail || contactEmail}</span>, and drop it off. You'll get a scan
-              the moment it reaches the VCA facility.
+              Your request is saved. No payment, shipping label or email has been generated. Do not mail your card until a VCA administrator confirms service availability and shipping instructions.
             </p>
             <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 font-mono text-[10px] text-white/70">
               <Truck className="h-3.5 w-3.5 text-holo-cyan" /> TRACKING · {confirmation}
@@ -272,7 +273,7 @@ export default function Submit() {
           <NavRow
             disabled={!card}
             onNext={() => {
-              if (card) setDeclaredValue((v) => (v > 0 ? v : Math.round(card.prices.raw)));
+              if (card) setDeclaredValue((v) => (v > 0 ? v : (Number.isFinite(card.prices.raw) ? Math.round(card.prices.raw) : 0)));
               setStep(1);
             }}
           />
@@ -308,8 +309,7 @@ export default function Submit() {
               ))}
             </div>
             <p className="mt-2 text-[10px] leading-relaxed text-white/40">
-              Your assessment helps our graders — the final VCA grade is determined by the 25-tool forensic inspection, not
-              this declaration.
+              Your self-assessment is not a grade. Only a documented professional physical inspection can support a final grading decision.
             </p>
           </div>
           <div>
@@ -323,7 +323,7 @@ export default function Submit() {
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 font-mono text-[12px] text-white placeholder:text-white/30 focus:border-holo-cyan/50 focus:outline-none"
             />
             <p className="mt-2 text-[10px] text-white/40">
-              Insurance ceiling for return shipping. Declared value drives the service tier limit.
+              Your declared value determines the service tier limit. This request does not purchase insurance.
             </p>
           </div>
           <NavRow onBack={() => setStep(0)} onNext={() => setStep(2)} />
@@ -335,7 +335,7 @@ export default function Submit() {
         <div className="glass animate-fade-up space-y-3 rounded-3xl p-5">
           <p className="font-display text-sm font-extrabold uppercase tracking-wide text-white">Choose your service</p>
           <div className="grid gap-2.5 sm:grid-cols-2">
-            {SERVICE_TIERS.map((t) => {
+            {SERVICE_TIERS.filter(t => t.id !== 'bulk').map((t) => {
               const tooSmall = declaredValue > t.maxDeclaredValue;
               return (
                 <button
@@ -410,15 +410,15 @@ export default function Submit() {
                 <span>{usd(activeTier.price)}</span>
               </div>
               <div className="flex justify-between text-white/60">
-                <span>RETURN SHIPPING (INSURED)</span>
-                <span>INCLUDED</span>
+                <span>PAYMENT & SHIPPING</span>
+                <span>NOT CONNECTED</span>
               </div>
               <div className="flex justify-between text-white/60">
                 <span>TURNAROUND</span>
                 <span className="text-holo-gold">{activeTier.turnaround.toUpperCase()}</span>
               </div>
               <div className="flex justify-between border-t border-white/8 pt-2 text-sm font-bold text-white">
-                <span>TOTAL</span>
+                <span>INDICATIVE SERVICE FEE</span>
                 <span className="text-holo-cyan">{usd(activeTier.price)}</span>
               </div>
             </div>
@@ -426,8 +426,8 @@ export default function Submit() {
 
           <NavRow
             onBack={() => setStep(2)}
-            nextLabel="Submit & pay"
-            disabled={!detailsValid}
+            nextLabel={submissionPending ? 'Saving request…' : 'Save grading request'}
+            disabled={!detailsValid || submissionPending}
             nextIcon={CreditCard}
             onNext={submit}
           />
@@ -435,6 +435,8 @@ export default function Submit() {
         </div>
       )}
 
+      <p className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-xs text-blue-900">Request intake only. Fees and turnaround are indicative, subject to confirmation. No payment, insured shipping or email delivery is included yet. Bulk intake is not available.</p>
+      {submissionsError && <p role="alert">{submissionsError}</p>}
       {/* my submissions */}
       {mySubs.length > 0 && (
         <div className="space-y-3">

@@ -1,79 +1,21 @@
-import { Info } from "lucide-react";
-
-import type { LivePrices } from "@/lib/prices";
-import type { CatalogCard } from "@/lib/types";
-
-const usd = (n: number) => `$${n.toLocaleString("en-US")}`;
-
-const ROWS = [
-  { label: "RAW", key: "raw" as const, sub: "Ungraded", color: "from-slate-400/60 to-slate-500/30" },
-  { label: "VCA 8", key: "g8" as const, sub: "Near Mint / Mint", color: "from-holo-violet/70 to-holo-violet/20" },
-  { label: "VCA 9", key: "g9" as const, sub: "Mint", color: "from-holo-cyan/80 to-holo-cyan/25" },
-  { label: "VCA 10", key: "g10" as const, sub: "Gem Mint", color: "from-holo-gold to-holo-gold/25" },
-];
-
-type PriceKey = (typeof ROWS)[number]["key"];
-
-interface PriceLadderProps {
-  card: CatalogCard;
-  /** Live market snapshot — when present it overrides the bundled index values. */
-  live?: LivePrices | null;
-  loading?: boolean;
-}
-
-export default function PriceLadder({ card, live, loading }: PriceLadderProps) {
-  const val = (key: PriceKey) =>
-    live && Number.isFinite(live[key]) ? live[key] : card.prices[key];
-  const max = Math.max(...ROWS.map((r) => val(r.key)));
-  const isLive = Boolean(live);
-
-  return (
-    <div className="glass rounded-2xl p-4 sm:p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="font-display text-sm font-bold tracking-wide text-white/90">ESTIMATED MARKET VALUE</h3>
-        {isLive ? (
-          <span className="flex items-center gap-1.5 text-[10px] font-bold text-holo-mint">
-            <span className="h-1.5 w-1.5 animate-pulse-glow rounded-full bg-holo-mint shadow-[0_0_8px_rgba(53,224,161,0.9)]" />
-            LIVE · {live!.source.split(" ")[0].toUpperCase()}
-          </span>
-        ) : loading ? (
-          <span className="flex items-center gap-1 text-[10px] text-white/40">
-            <span className="h-1.5 w-1.5 animate-pulse-glow rounded-full bg-holo-cyan" /> SYNCING…
-          </span>
-        ) : (
-          <span className="flex items-center gap-1 text-[10px] text-white/40">
-            <Info className="h-3 w-3" /> estimate only
-          </span>
-        )}
-      </div>
-
-      <div className="space-y-2.5">
-        {ROWS.map((r, i) => (
-          <div key={r.key} className="group">
-            <div className="mb-1 flex items-baseline justify-between gap-2 text-[11px]">
-              <span className="font-display font-bold text-white/85">{r.label}</span>
-              <span className="text-white/40">{r.sub}</span>
-              <span className={`ml-auto font-mono font-bold ${i === 3 ? "text-holo-gold" : "text-holo-cyan"}`}>
-                {usd(val(r.key))}
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/5">
-              <div
-                className={`h-full rounded-full bg-gradient-to-r ${r.color} transition-all duration-1000 group-hover:brightness-125`}
-                style={{ width: `${Math.max((val(r.key) / max) * 100, 6)}%`, transitionDelay: `${i * 90}ms` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <p className="mt-3 border-t border-white/5 pt-2.5 text-[10px] leading-relaxed text-white/35">
-        Estimated market value — not a guaranteed sale price.{" "}
-        {isLive
-          ? `Source: ${live!.source} · updated ${live!.updatedAt}. `
-          : `Source: ${card.priceSource} · ${card.priceDate}. `}
-        Prices reflect recent comparable sales and condition assessment, which may differ from a final VCA grade.
-      </p>
-    </div>
-  );
+import { useState } from 'react';
+import type { CatalogCard } from '@/lib/types';
+import type { LivePrices } from '@/lib/prices';
+import { Info } from 'lucide-react';
+const rows = [{ key: 'raw', label: 'Raw market' }, { key: 'g8', label: 'PSA 8' }, { key: 'g9', label: 'PSA 9' }, { key: 'g10', label: 'PSA 10' }] as const;
+const conditions = ['Provider market', 'Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged'];
+function freshness(date: string): string { const timestamp = Date.parse(date); if (!Number.isFinite(timestamp)) return 'Date unavailable'; const days = Math.floor((Date.now() - timestamp) / 86400000); return days > 7 ? `${date} · STALE (${days} days old)` : date; }
+export default function PriceLadder({ card, live, loading }: { card: CatalogCard; live?: LivePrices | null; loading?: boolean }) {
+  const [condition, setCondition] = useState<string>('Provider market');
+  return <section className="glass rounded-2xl p-5"><div className="flex justify-between"><h3 className="font-display font-bold text-foreground">Market comparisons</h3><span className="text-xs text-muted-foreground">USD</span></div>
+    <p className="mt-1 text-xs text-muted-foreground">{card.variant} · {card.language}</p>
+    <label className="mt-4 block text-xs font-medium">Raw condition<select aria-label="Raw condition" className="vca-input mt-2 w-full" value={condition} onChange={e => setCondition(e.target.value)}>{conditions.map(c => <option key={c}>{c}</option>)}</select></label>
+    <div className="mt-2 divide-y divide-border">{rows.map(row => {
+      const conditionQuote = row.key === 'raw' && condition !== 'Provider market' ? live?.rawConditions?.[condition] : undefined;
+      const value = row.key === 'raw' && condition !== 'Provider market' ? conditionQuote?.price : live?.[row.key];
+      const evidence = row.key === 'raw' && condition !== 'Provider market' ? conditionQuote?.evidence : live?.evidence?.[row.key];
+      const available = typeof value === 'number' && Number.isFinite(value);
+      return <div key={row.key} className="py-3"><div className="flex items-center justify-between"><span className="text-sm font-semibold">{row.label}</span><strong className="font-mono text-primary">{available ? value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : loading ? 'Loading…' : 'Unavailable'}</strong></div><p className="mt-1 text-[11px] text-muted-foreground">{available && evidence ? `${evidence.source} · ${freshness(evidence.updatedAt)} · ${evidence.condition}` : 'No exact printing / condition / grade price available'}</p></div>;
+    })}</div>
+    <p className="mt-3 flex gap-2 text-xs leading-relaxed text-muted-foreground"><Info className="h-4 w-4 shrink-0"/>PSA comparisons are not VCA resale prices. Sign in for graded and condition-specific comparisons where available. Source dates may lag; these are not guaranteed sale proceeds or an appraisal.</p></section>;
 }

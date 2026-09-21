@@ -45,6 +45,8 @@ export interface CatalogCard {
   artUrl: string;
   /** Real-product key: pokemontcg.io card id (e.g. "base1-4") used for live catalog pricing. */
   tcgCardId: string;
+  /** Exact TCGdex product key when identified by that provider. */
+  tcgdexId?: string;
   prices: PricePoint;
   priceDate: string;
   priceSource: string;

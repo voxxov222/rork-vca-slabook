@@ -49,7 +49,7 @@ interface CardArtProps {
  * devices, with a moving holo sheen + glare, simulating a real holo card in light.
  */
 export default function CardArt({ card, grade, serial, className, interactive = true, showMeta = true, showRarity = false, onClick }: CardArtProps) {
-  const style = TYPE_STYLE[card.type];
+  const style = TYPE_STYLE[card.type] ?? TYPE_STYLE.Colorless;
   const rootRef = useRef<HTMLDivElement>(null);
   const pointerActive = useRef(false);
   const reducedMotion = useRef(false);
@@ -104,6 +104,10 @@ export default function CardArt({ card, grade, serial, className, interactive = 
   return (
     <div
       ref={rootRef}
+      data-card-art
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={e => { if (onClick && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onClick(); } }}
       onClick={onClick}
       onPointerMove={applyPointer}
       onPointerLeave={resetTilt}
@@ -189,7 +193,7 @@ export default function CardArt({ card, grade, serial, className, interactive = 
               <p className="shrink-0 font-mono text-[8px] text-holo-cyan/80">{serial}</p>
             ) : (
               <span className="flex items-center gap-0.5 text-[8px] text-holo-mint/80">
-                <ShieldCheck className="h-2.5 w-2.5" /> verified
+                <ShieldCheck className="h-2.5 w-2.5" /> reference
               </span>
             )}
           </div>

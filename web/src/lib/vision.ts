@@ -1,5 +1,5 @@
 import { CATALOG, cardById } from "@/lib/data";
-import type { CatalogCard } from "@/lib/types";
+import { sameProduct } from './identity';
 
 /**
  * VCA Vision — AI card identification & authenticity screening through the
@@ -28,6 +28,8 @@ export interface ScanAnalysis {
   number: string;
   rarity: string;
   holo: boolean;
+  language?: string;
+  printing?: string;
   year: string | null;
   verdict: ScanVerdict;
   /** 0–100 screening confidence. */
@@ -98,15 +100,17 @@ export async function downscaleForUpload(dataUrl: string): Promise<string> {
 /* AI analysis                                                         */
 /* ------------------------------------------------------------------ */
 
-const PROMPT = `You are VCA Vision, a Pokemon trading-card identification and authenticity screening engine used by a professional grading platform.
+const PROMPT = `You identify Pokemon trading cards from photos. You do NOT authenticate or grade physical cards.
 Analyze the card photo and respond with ONLY valid JSON (no markdown fences, no prose) in this exact shape:
 {"identified": boolean, "name": string, "set": string, "number": string, "rarity": string, "holo": boolean, "year": string|null, "verdict": "authentic"|"suspect"|"counterfeit", "confidence": number, "summary": string, "signals": [{"label": string, "ok": boolean, "note": string}]}
 Rules:
-- "confidence" is an integer 0-100 describing how sure the screening is.
-- Evaluate these six signals, each with ok true/false and a short note: "Print rosette pattern", "Card stock & layering", "Color gamut match", "Font & kerning", "Holofoil pattern", "Centering & borders".
-- verdict "counterfeit" when fake indicators clearly dominate; "suspect" when mixed or the photo is too poor to verify; "authentic" when all signals pass.
-- If the image is not a recognizable Pokemon card, set identified=false, verdict="counterfeit", confidence<=25 and explain in summary.
-- Screening is image-only and conservative: never overstate certainty. summary is one sentence, honest, no emojis.`;
+- confidence describes identification certainty only, not authenticity.
+- Return language and printing fields when readable; otherwise use Unknown and Unconfirmed.
+- Read the full collector number, retaining prefixes such as TG, GG, SV and the denominator. Do not guess unreadable text or sets.
+- signals must contain only visible observations (legible text, visible wear, glare). NEVER claim to measure card stock, thickness, layers, print rosettes, or authenticity.
+- verdict must always be suspect, meaning unverified by physical inspection.
+- If not recognizable, identified=false, confidence=0 and explain what photo is needed.
+- summary must describe identification limits and visible observations only.`;
 
 interface GatewayChoice {
   message?: { content?: string | { text?: string }[] };
@@ -140,21 +144,20 @@ const asSignals = (value: unknown): ScanSignal[] => {
 
 const parseAnalysis = (content: string): ScanAnalysis => {
   const blob = firstJsonObject(content);
-  if (!blob) throw new Error("Malformed vision response");
+  if (!blob) throw new Error('The identification service returned an incomplete result. Retry the photo or search by name.');
   const p = JSON.parse(blob) as Record<string, unknown>;
-  const verdictRaw = String(p.verdict ?? "suspect");
-  const verdict: ScanVerdict =
-    verdictRaw === "authentic" || verdictRaw === "counterfeit" ? verdictRaw : "suspect";
   const confidenceRaw = Number(p.confidence);
   return {
-    identified: Boolean(p.identified),
+    identified: p.identified === true,
     name: String(p.name ?? "Unknown card").trim(),
     setName: String(p.set ?? "Unknown set").trim(),
     number: String(p.number ?? "—").trim(),
     rarity: String(p.rarity ?? "—").trim(),
     holo: Boolean(p.holo),
     year: typeof p.year === "string" || typeof p.year === "number" ? String(p.year) : null,
-    verdict,
+    language: typeof p.language === 'string' ? p.language : 'Unknown',
+    printing: typeof p.printing === 'string' ? p.printing : 'Unconfirmed',
+    verdict: 'suspect',
     confidence: Number.isFinite(confidenceRaw)
       ? Math.min(100, Math.max(0, Math.round(confidenceRaw)))
       : 50,
@@ -164,35 +167,37 @@ const parseAnalysis = (content: string): ScanAnalysis => {
   };
 };
 
-const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-/** Fuzzy-matches an AI identification against the app catalog. */
+/** Matches exact name, set and collector number; user confirmation is still required. */
 export function matchCatalog(analysis: ScanAnalysis): ScanAnalysis {
-  const nName = normalize(analysis.name);
-  if (!nName) return analysis;
-  const hit = CATALOG.find((c) => {
-    const sameName =
-      normalize(c.name) === nName ||
-      normalize(c.pokemon) === nName ||
-      normalize(c.name).includes(nName) ||
-      nName.includes(normalize(c.name));
-    const setHint = normalize(analysis.setName).includes("base");
-    return sameName && (setHint || true);
-  });
-  return hit ? { ...analysis, matchedCardId: hit.id } : analysis;
+  const hits = CATALOG.filter(c => sameProduct(c, { name: analysis.name, set: analysis.setName, number: analysis.number }));
+  return { ...analysis, matchedCardId: analysis.identified && hits.length === 1 ? hits[0].id : null };
 }
 
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 /** Runs the vision analysis against the Rork Toolkit proxy. */
-export async function analyzeCardImage(dataUrl: string): Promise<ScanAnalysis> {
+export async function analyzeCardImage(dataUrl: string, signal?: AbortSignal): Promise<ScanAnalysis> {
   const res = await fetch(`${TOOLKIT_URL}/v2/vercel/v1/chat/completions`, {
     method: "POST",
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(45000)]) : AbortSignal.timeout(45000),
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: VISION_MODEL,
       temperature: 0.2,
-      max_tokens: 900,
+      max_tokens: 3000,
+      reasoning: { max_tokens: 512, exclude: true },
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'card_identification', strict: true,
+          schema: {
+            type: 'object', additionalProperties: false,
+            required: ['identified', 'name', 'set', 'number', 'rarity', 'holo', 'year', 'language', 'printing', 'verdict', 'confidence', 'summary', 'signals'],
+            properties: {
+              identified: { type: 'boolean' }, name: { type: 'string' }, set: { type: 'string' }, number: { type: 'string' }, rarity: { type: 'string' }, holo: { type: 'boolean' }, year: { type: ['string', 'null'] }, language: { type: 'string' }, printing: { type: 'string' }, verdict: { type: 'string', enum: ['suspect'] }, confidence: { type: 'number' }, summary: { type: 'string' },
+              signals: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['label', 'ok', 'note'], properties: { label: { type: 'string' }, ok: { type: 'boolean' }, note: { type: 'string' } } } },
+            },
+          },
+        },
+      },
       messages: [
         {
           role: "user",
@@ -204,52 +209,12 @@ export async function analyzeCardImage(dataUrl: string): Promise<ScanAnalysis> {
       ],
     }),
   });
-  if (!res.ok) throw new Error(`Vision engine HTTP ${res.status}`);
+  if (!res.ok) throw new Error(res.status === 429 ? 'Vision is busy. Please wait a moment and retry.' : res.status === 401 || res.status === 403 ? 'Vision access could not be authorized. Reload the app and retry.' : 'Vision service could not complete the request. Retry or search manually.');
   const json: unknown = await res.json();
+  const finish = (json as { choices?: { finish_reason?: string }[] }).choices?.[0]?.finish_reason;
+  if (finish === 'length') throw new Error('Identification was cut short. Retry with a clear crop or search manually.');
+  if (finish === 'content_filter') throw new Error('This photo could not be analyzed. Try a different card photo.');
   return matchCatalog(parseAnalysis(extractContent(json)));
-}
-
-/* ------------------------------------------------------------------ */
-/* Deterministic demo analyses (sample cards, no photo needed)         */
-/* ------------------------------------------------------------------ */
-
-export const PASS_SIGNALS: ScanSignal[] = [
-  { label: "Print rosette pattern", ok: true, note: "matches verified print run" },
-  { label: "Card stock & layering", ok: true, note: "density 0.31 mm — genuine stock" },
-  { label: "Color gamut match", ok: true, note: "within WOTC ink tolerance" },
-  { label: "Font & kerning", ok: true, note: "typeface metrics exact" },
-  { label: "Holofoil pattern", ok: true, note: "sparkle geometry authentic" },
-  { label: "Centering & borders", ok: true, note: "within grading tolerance" },
-];
-
-export const FLAG_SIGNALS: ScanSignal[] = [
-  { label: "Print rosette pattern", ok: true, note: "approximate match" },
-  { label: "Card stock & layering", ok: false, note: "density off by ~9%" },
-  { label: "Color gamut match", ok: true, note: "within tolerance" },
-  { label: "Font & kerning", ok: false, note: "letter spacing inconsistent" },
-  { label: "Holofoil pattern", ok: false, note: "sparkle geometry does not match print records" },
-  { label: "Centering & borders", ok: true, note: "within tolerance" },
-];
-
-/** Deterministic pipeline result for the built-in demo cards. */
-export function simulatedAnalysis(card: CatalogCard): ScanAnalysis {
-  const isSuspect = card.id === "pikachu-base";
-  return {
-    identified: true,
-    name: card.name,
-    setName: card.set,
-    number: card.number,
-    rarity: card.rarity,
-    holo: card.rarity === "Holo Rare",
-    year: String(card.year),
-    verdict: isSuspect ? "counterfeit" : "authentic",
-    confidence: isSuspect ? 34 : 97,
-    signals: isSuspect ? FLAG_SIGNALS : PASS_SIGNALS,
-    summary: isSuspect
-      ? "Card stock density, kerning and holofoil geometry are inconsistent with verified Base Set printings — counterfeit indicators present."
-      : "All authenticity signals match verified print records for this card.",
-    matchedCardId: card.id,
-  };
 }
 
 export { cardById };

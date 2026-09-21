@@ -3,14 +3,14 @@ import { Link, useNavigate } from "react-router-dom";
 import { Gem, Grid3x3, Heart, LayoutGrid, Plus, Rows3, ScanLine, Star, Wallet } from "lucide-react";
 
 import CardArt from "@/components/CardArt";
-import { cardById } from "@/lib/data";
+import { useLiveCollectionValue } from '@/lib/prices';
 import { useVca } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "grid" | "binder" | "gallery";
 type Filter = "all" | "raw" | "graded" | "favorites" | "wishlist" | "slabbed";
 
-const usd = (n: number) => `$${n.toLocaleString("en-US")}`;
+const usd = (n: number) => Number.isFinite(n) ? `$${n.toLocaleString('en-US')}` : 'No quote';
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
@@ -24,11 +24,13 @@ const FILTERS: { id: Filter; label: string }[] = [
 export default function Collection() {
   const navigate = useNavigate();
   const { myItems, collectionValue, toggleFavorite, toggleWishlistItem, cardById } = useVca();
+  const value = useLiveCollectionValue(myItems());
+  const [search, setSearch] = useState<string>('');
   const [view, setView] = useState<ViewMode>("grid");
   const [filter, setFilter] = useState<Filter>("all");
 
   const items = useMemo(() => {
-    const all = myItems();
+    const all = myItems().filter(i => { const c = cardById(i.cardId); return !search || `${c?.name} ${c?.set} ${c?.number}`.toLowerCase().includes(search.toLowerCase()); });
     switch (filter) {
       case "raw":
         return all.filter((i) => !i.grade);
@@ -43,17 +45,14 @@ export default function Collection() {
       default:
         return all;
     }
-  }, [myItems, filter]);
+  }, [myItems, filter, search, cardById]);
 
   const g = (label: string) => myItems().filter((i) => i.grade === label).length;
 
   const itemValue = (grade: string | null, cardId: string) => {
     const card = cardById(cardId);
     if (!card) return 0;
-    if (grade === "VCA 10") return card.prices.g10;
-    if (grade === "VCA 9") return card.prices.g9;
-    if (grade === "VCA 8") return card.prices.g8;
-    return card.prices.raw;
+    return Number.NaN;
   };
 
   return (
@@ -85,8 +84,8 @@ export default function Collection() {
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
         <div className="glass rounded-2xl p-3.5">
           <Wallet className="h-4 w-4 text-holo-gold" />
-          <p className="mt-2 font-display text-lg font-extrabold text-white">{usd(collectionValue())}</p>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Total Value</p>
+          <p className="mt-2 font-display text-lg font-extrabold text-white">{value.liveCount ? usd(value.total) : 'No quotes'}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Quoted raw subtotal</p>
         </div>
         <div className="glass rounded-2xl p-3.5">
           <Grid3x3 className="h-4 w-4 text-holo-cyan" />
@@ -110,6 +109,8 @@ export default function Collection() {
         </div>
       </div>
 
+      <p className="text-xs text-muted-foreground">{value.liveCount} of {myItems().length} cards have raw market quotes. Missing quotes and VCA-graded cards are excluded, not valued at zero.</p>
+      <input className="vca-input w-full" aria-label="Search collection" placeholder="Search name, set or collector number" value={search} onChange={e => setSearch(e.target.value)} />
       {/* controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
@@ -156,7 +157,7 @@ export default function Collection() {
               <div key={item.id} className="group relative">
                 <CardArt card={card} grade={item.grade} serial={item.serial} onClick={() => navigate(`/card/${card.id}`)} />
                 <p className="mt-1.5 truncate px-0.5 text-center font-mono text-[10px] font-bold text-holo-cyan">{usd(itemValue(item.grade, item.cardId))}</p>
-                <div className="absolute right-1.5 top-1.5 z-30 flex flex-col gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="absolute right-1.5 top-1.5 z-30 flex flex-col gap-1 opacity-100 transition-opacity">
                   <button
                     onClick={() => toggleFavorite(item.id)}
                     aria-label="Toggle favorite"

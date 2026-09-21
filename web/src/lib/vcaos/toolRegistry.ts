@@ -257,15 +257,7 @@ export async function executeDynamicTool(
   saveStore(store);
 
   try {
-    // eslint-disable-next-line no-new-func -- sandboxed tool runner by design
-    const fn = new Function(
-      "args",
-      "context",
-      `${tool.sourceCode}
-      if (typeof execute === 'function') return execute(args, context);
-      return { result: "Executed script without return value" };`,
-    );
-    return (await fn(args, context)) as Record<string, unknown>;
+    return { error: 'Dynamic code execution is disabled. Only reviewed, server-authorized operations may run.' };
   } catch (err) {
     return {
       error: `Execution error in dynamic tool ${name}: ${err instanceof Error ? err.message : String(err)}`,

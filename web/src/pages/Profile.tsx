@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { toast } from 'sonner';
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Activity,
@@ -70,6 +71,8 @@ function SelfProfile() {
     removeBlock,
     addProfileMedia,
     removeProfileMedia,
+    updateProfile,
+    saving,
   } = useVca();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("cards");
@@ -183,7 +186,8 @@ function SelfProfile() {
                 />
               </label>
               <button
-                onClick={() => setEditing(false)}
+                disabled={saving}
+                onClick={() => void updateProfile(profile).then(() => setEditing(false)).catch(e => toast.error(e.message))}
                 className="rounded-full bg-gradient-to-r from-holo-cyan to-holo-violet px-4 py-2 text-[11px] font-bold text-void sm:w-fit"
               >
                 Save profile

@@ -18,6 +18,153 @@ export type Database = {
   }
   public: {
     Tables: {
+      vca_accounts: {
+        Row: {
+          created_at: string
+          display_name: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string
+          id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          id?: string
+        }
+        Relationships: []
+      }
+      vca_admins: {
+        Row: {
+          user_id: string
+        }
+        Insert: {
+          user_id: string
+        }
+        Update: {
+          user_id?: string
+        }
+        Relationships: []
+      }
+      vca_cards: {
+        Row: {
+          artist: string | null
+          card_id: string
+          delta7: number | null
+          image_large: string | null
+          image_url: string | null
+          name: string
+          number: string | null
+          psa10: number | null
+          psa8: number | null
+          psa9: number | null
+          rarity: string | null
+          raw: number | null
+          set_id: string | null
+          set_name: string | null
+          source: string
+          tcg_slug: string | null
+          updated_at: string
+          year: number | null
+        }
+        Insert: {
+          artist?: string | null
+          card_id: string
+          delta7?: number | null
+          image_large?: string | null
+          image_url?: string | null
+          name: string
+          number?: string | null
+          psa10?: number | null
+          psa8?: number | null
+          psa9?: number | null
+          rarity?: string | null
+          raw?: number | null
+          set_id?: string | null
+          set_name?: string | null
+          source?: string
+          tcg_slug?: string | null
+          updated_at?: string
+          year?: number | null
+        }
+        Update: {
+          artist?: string | null
+          card_id?: string
+          delta7?: number | null
+          image_large?: string | null
+          image_url?: string | null
+          name?: string
+          number?: string | null
+          psa10?: number | null
+          psa8?: number | null
+          psa9?: number | null
+          rarity?: string | null
+          raw?: number | null
+          set_id?: string | null
+          set_name?: string | null
+          source?: string
+          tcg_slug?: string | null
+          updated_at?: string
+          year?: number | null
+        }
+        Relationships: []
+      }
+      vca_market_budget: {
+        Row: {
+          minute: string
+          requests: number
+          user_id: string
+        }
+        Insert: {
+          minute: string
+          requests?: number
+          user_id: string
+        }
+        Update: {
+          minute?: string
+          requests?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      vca_posts: {
+        Row: {
+          body: string
+          caption: string | null
+          card_grade: string | null
+          card_id: string | null
+          card_serial: string | null
+          client_id: string
+          created_at: string
+          kind: string
+          user_id: string
+        }
+        Insert: {
+          body?: string
+          caption?: string | null
+          card_grade?: string | null
+          card_id?: string | null
+          card_serial?: string | null
+          client_id: string
+          created_at?: string
+          kind?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          caption?: string | null
+          card_grade?: string | null
+          card_id?: string | null
+          card_serial?: string | null
+          client_id?: string
+          created_at?: string
+          kind?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       vca_profile_blocks: {
         Row: {
           client_id: string
@@ -171,12 +318,128 @@ export type Database = {
         }
         Relationships: []
       }
+      vca_submission_events: {
+        Row: {
+          actor_id: string
+          created_at: string
+          id: string
+          note: string
+          status: string
+          submission_id: string
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          id?: string
+          note?: string
+          status: string
+          submission_id: string
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          id?: string
+          note?: string
+          status?: string
+          submission_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vca_submission_events_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "vca_submissions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vca_submissions: {
+        Row: {
+          card_id: string
+          cert_serial: string | null
+          created_at: string
+          details: Json
+          final_grade: string | null
+          id: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          card_id: string
+          cert_serial?: string | null
+          created_at?: string
+          details: Json
+          final_grade?: string | null
+          id?: string
+          status?: string
+          user_id?: string
+        }
+        Update: {
+          card_id?: string
+          cert_serial?: string | null
+          created_at?: string
+          details?: Json
+          final_grade?: string | null
+          id?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      vca_workspace: {
+        Row: {
+          data: Json
+          revision: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          data?: Json
+          revision?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          data?: Json
+          revision?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
       user_id: { Args: never; Returns: string }
+      vca_advance_submission: {
+        Args: {
+          evidence_note?: string
+          grade?: string
+          next_status: string
+          submission: string
+        }
+        Returns: undefined
+      }
+      vca_is_admin: { Args: never; Returns: boolean }
+      vca_record_inspection: {
+        Args: { inspection: Json; submission: string }
+        Returns: undefined
+      }
+      vca_save_workspace: {
+        Args: { expected_revision: number; payload: Json }
+        Returns: number
+      }
+      vca_save_workspace_owned: {
+        Args: {
+          expected_owner: string
+          expected_revision: number
+          payload: Json
+        }
+        Returns: number
+      }
+      vca_use_market_budget: { Args: never; Returns: boolean }
     }
     Enums: {
       [_ in never]: never

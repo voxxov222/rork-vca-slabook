@@ -1,257 +1,46 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { RotateCcw, ZoomIn } from "lucide-react";
-
-import type { CatalogCard, GradeLabel } from "@/lib/types";
-
-export type LabelStyle = "classic" | "neon" | "gold";
-export type Environment = "void" | "studio" | "nebula";
-
-export interface SlabConfig {
-  labelStyle: LabelStyle;
-  holo: number; // 0..100 holographic intensity
-  environment: Environment;
-  lightTint: string; // hex
-  cardOffset: number; // -20..20
-  showGrade: boolean;
-  autoSpin: boolean;
-}
-
-const ENV_BG: Record<Environment, string> = {
-  void: "radial-gradient(60% 60% at 50% 40%, rgba(45,226,255,0.08), transparent 70%), #04060D",
-  studio: "radial-gradient(60% 70% at 50% 30%, rgba(148,180,255,0.16), transparent 70%), linear-gradient(180deg, #0A1020, #05070E)",
-  nebula: "radial-gradient(45% 55% at 30% 30%, rgba(255,79,216,0.16), transparent 70%), radial-gradient(50% 60% at 72% 68%, rgba(139,92,255,0.18), transparent 70%), #04060D",
-};
-
-const LABEL_STYLES: Record<LabelStyle, { frame: string; title: string; accent: string }> = {
-  classic: { frame: "border-white/15 bg-black/80", title: "text-white", accent: "text-holo-cyan" },
-  neon: { frame: "border-holo-cyan/50 bg-[rgba(6,20,34,0.9)] shadow-[0_0_18px_rgba(61,107,232,0.25)]", title: "text-holo-cyan", accent: "text-holo-violet" },
-  gold: { frame: "border-holo-gold/50 bg-[rgba(24,18,6,0.9)] shadow-[0_0_18px_rgba(255,179,64,0.22)]", title: "text-holo-gold", accent: "text-holo-gold" },
-};
-
-interface HoloSlabProps {
-  card: CatalogCard;
-  grade: GradeLabel | null;
-  serial: string | null;
-  config: SlabConfig;
-  className?: string;
-}
-
-/** Interactive 3D holographic slab — drag to rotate, wheel/slider to zoom. */
-export default function HoloSlab({ card, grade, serial, config, className }: HoloSlabProps) {
-  const [rot, setRot] = useState({ x: -8, y: 24 });
-  const [zoom, setZoom] = useState(1);
-  const [dragging, setDragging] = useState(false);
-  const dragRef = useRef<{ x: number; y: number } | null>(null);
-  const spinRef = useRef<number | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  const label = LABEL_STYLES[config.labelStyle];
-
-  /* auto-spin */
+import { useEffect, useRef, useState } from 'react';
+import { FlipHorizontal2, RotateCcw, ZoomIn } from 'lucide-react';
+import { Button } from './ui/button';
+import type { CatalogCard, GradeLabel } from '@/lib/types';
+export type LabelStyle = 'classic' | 'neon' | 'gold';
+export type Environment = 'void' | 'studio' | 'nebula';
+export interface SlabConfig { labelStyle: LabelStyle; holo: number; environment: Environment; lightTint: string; cardOffset: number; showGrade: boolean; autoSpin: boolean; simple?: boolean }
+interface Props { card: CatalogCard; grade: GradeLabel | null; serial: string | null; config: SlabConfig; className?: string; frontPhoto?: string; backPhoto?: string }
+/** CSS-perspective holder: no GPU/WebGL dependency; reduced motion disables auto-rotation. */
+export default function HoloSlab({ card, grade, serial, config, className, frontPhoto, backPhoto }: Props) {
+  const [rot, setRot] = useState<{ x: number; y: number }>({ x: -7, y: -18 });
+  const [zoom, setZoom] = useState<number>(1);
+  const [dragging, setDragging] = useState<boolean>(false);
+  const [reduced, setReduced] = useState<boolean>(false);
+  const drag = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => { const media = window.matchMedia('(prefers-reduced-motion: reduce)'); const update = (): void => setReduced(media.matches); update(); media.addEventListener('change', update); return () => media.removeEventListener('change', update); }, []);
   useEffect(() => {
-    if (!config.autoSpin || dragging) return;
-    let raf: number;
-    const tick = () => {
-      setRot((r) => ({ ...r, y: r.y + 0.35 }));
-      raf = requestAnimationFrame(tick);
-      spinRef.current = raf;
-    };
-    raf = requestAnimationFrame(tick);
-    return () => {
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [config.autoSpin, dragging]);
-
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      setDragging(true);
-      dragRef.current = { x: e.clientX, y: e.clientY };
-      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-    },
-    [],
-  );
-
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!dragging || !dragRef.current) return;
-      const dx = e.clientX - dragRef.current.x;
-      const dy = e.clientY - dragRef.current.y;
-      dragRef.current = { x: e.clientX, y: e.clientY };
-      setRot((r) => ({
-        x: Math.max(-60, Math.min(60, r.x - dy * 0.45)),
-        y: r.y + dx * 0.5,
-      }));
-    },
-    [dragging],
-  );
-
-  const endDrag = useCallback(() => {
-    setDragging(false);
-    dragRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      setZoom((z) => Math.max(0.6, Math.min(1.6, z - e.deltaY * 0.001)));
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
-
-  const reset = () => {
-    setRot({ x: -8, y: 24 });
-    setZoom(1);
-  };
-
-  const gradeText = config.showGrade && grade ? grade : grade ? "" : "UNGRADED";
-
-  return (
-    <div className={className}>
-      <div
-        ref={containerRef}
-        className="perspective-1200 relative flex h-[340px] w-full cursor-grab touch-none select-none items-center justify-center overflow-hidden rounded-3xl border border-white/8 sm:h-[420px]"
-        style={{ background: ENV_BG[config.environment] }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerLeave={endDrag}
-        onDoubleClick={reset}
-      >
-        {/* ambient light tint */}
-        <div className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(50% 45% at 50% 35%, ${config.lightTint}22, transparent 70%)` }} />
-        <div className="starfield pointer-events-none absolute inset-0 opacity-60" />
-
-        <div
-          className="preserve-3d relative"
-          style={{
-            transform: `scale(${zoom}) rotateX(${rot.x}deg) rotateY(${rot.y}deg)`,
-            width: 200,
-            height: 290,
-            transition: dragging ? "none" : "transform 0.15s linear",
-          }}
-        >
-          {/* slab thickness illusion — edge layers */}
-          {[8, 5, 2].map((d) => (
-            <div key={d} className="absolute inset-0 rounded-2xl bg-white/4 border border-white/8" style={{ transform: `translateZ(${-d}px)` }} />
-          ))}
-
-          {/* FRONT FACE */}
-          <div className="preserve-3d absolute inset-0 overflow-hidden rounded-2xl border border-white/25 backface-hidden" style={{ transform: "translateZ(9px)", background: "linear-gradient(150deg, rgba(210,235,255,0.14), rgba(148,180,255,0.05) 40%, rgba(255,255,255,0.03))", backdropFilter: "blur(2px)", boxShadow: `0 30px 60px -20px rgba(0,0,0,0.85), inset 0 0 24px ${config.lightTint}14` }}>
-            {/* corner screws */}
-            {["top-2 left-2", "top-2 right-2", "bottom-2 left-2", "bottom-2 right-2"].map((pos) => (
-              <div key={pos} className={`absolute ${pos} h-1.5 w-1.5 rounded-full bg-white/30 ring-1 ring-white/40`} />
-            ))}
-
-            {/* the card inside */}
-            <div className="absolute left-1/2 w-[168px] -translate-x-1/2 overflow-hidden rounded-lg" style={{ top: 12 + config.cardOffset }}>
-              <div className="relative aspect-[3/4.2] w-full overflow-hidden rounded-lg ring-1 ring-[#cfd8e6]/20">
-                <img src={card.artUrl} alt={card.name} draggable={false} className="h-full w-full object-cover" />
-                {/* holographic foil over card */}
-                <div
-                  className="pointer-events-none absolute inset-0 mix-blend-color-dodge"
-                  style={{
-                    opacity: config.holo / 100,
-                    background:
-                      "conic-gradient(from 180deg at 50% 50%, rgba(61,107,232,0.5), rgba(232,57,74,0.45), rgba(143,160,187,0.4), rgba(255,179,64,0.35), rgba(61,107,232,0.5))",
-                    animation: "holo-shift 6s ease-in-out infinite",
-                    backgroundSize: "300% 300%",
-                  }}
-                />
-                {/* glass reflection streak */}
-                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.28)_0%,transparent_28%,transparent_72%,rgba(255,255,255,0.12)_100%)]" />
-              </div>
-            </div>
-
-            {/* VCA label — the official Verified Card Authority logo plate, holographic */}
-            <div className={`absolute inset-x-2.5 bottom-2.5 h-[64px] overflow-hidden rounded-lg border shadow-[0_0_20px_rgba(61,107,232,0.3)] ${label.frame}`}>
-              <img
-                src="/vca-label.png"
-                alt="VCA — Verified Card Authority"
-                draggable={false}
-                className="absolute inset-0 h-full w-full object-cover object-bottom"
-              />
-              {/* holographic foil over the label */}
-              <div
-                className="pointer-events-none absolute inset-0 mix-blend-color-dodge"
-                style={{
-                  opacity: config.holo / 120,
-                  background:
-                    "conic-gradient(from 180deg at 50% 50%, rgba(61,107,232,0.55), rgba(232,57,74,0.5), rgba(240,244,255,0.4), rgba(143,160,187,0.45), rgba(61,107,232,0.55))",
-                  animation: "holo-shift 6s ease-in-out infinite",
-                  backgroundSize: "300% 300%",
-                }}
-              />
-              {/* glass reflection streak */}
-              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,rgba(255,255,255,0.22)_0%,transparent_30%,transparent_70%,rgba(255,255,255,0.1)_100%)]" />
-              {/* dynamic cert rows over a readable scrim */}
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[rgba(3,6,16,0.94)] via-[rgba(3,6,16,0.6)] to-transparent px-2 pb-1 pt-3">
-                <div className="flex items-baseline justify-between gap-1">
-                  <span className="truncate font-display text-[9px] font-extrabold uppercase tracking-wide text-white">{card.name.toUpperCase()}</span>
-                  <span className="shrink-0 font-display text-[11px] font-black tracking-wide text-holo-gold drop-shadow-[0_0_6px_rgba(255,179,64,0.5)]">{gradeText || ""}</span>
-                </div>
-                <div className="flex items-center justify-between gap-1">
-                  <span className="truncate text-[7px] font-medium text-white/60">
-                    {card.number} · {card.set.toUpperCase()}
-                  </span>
-                  {serial && <span className="shrink-0 font-mono text-[7px] tracking-wider text-white/70">{serial}</span>}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* BACK FACE */}
-          <div
-            className="absolute inset-0 overflow-hidden rounded-2xl border border-white/20 backface-hidden"
-            style={{ transform: "rotateY(180deg) translateZ(9px)", background: "linear-gradient(160deg, #0A1020, #060A16)" }}
-          >
-            <div className="flex h-full flex-col items-center justify-center gap-3">
-              <div className="relative h-28 w-16 overflow-hidden rounded-lg ring-1 ring-white/25">
-                <img src="/vca-label.png" alt="VCA" draggable={false} className="absolute inset-0 h-full w-full object-cover" />
-                <div
-                  className="pointer-events-none absolute inset-0 mix-blend-color-dodge"
-                  style={{
-                    opacity: config.holo / 130,
-                    background:
-                      "conic-gradient(from 180deg at 50% 50%, rgba(61,107,232,0.5), rgba(232,57,74,0.45), rgba(240,244,255,0.35), rgba(143,160,187,0.4), rgba(61,107,232,0.5))",
-                    animation: "holo-shift 6s ease-in-out infinite",
-                    backgroundSize: "300% 300%",
-                  }}
-                />
-              </div>
-              <p className="px-6 text-center font-display text-[9px] font-extrabold uppercase tracking-[0.2em] text-white/60">
-                Verified Card Authority
-                <br />
-                <span className="font-mono text-[8px] font-normal tracking-wider text-white/40">{serial ?? "AWAITING ISSUANCE"}</span>
-              </p>
-              <div className="h-8 w-28 rounded bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.7)_0_2px,transparent_2px_5px)] opacity-60" />
-            </div>
-          </div>
+    if (!config.autoSpin || reduced || dragging || config.simple) return;
+    let frame = 0; let last = performance.now();
+    const tick = (time: number): void => { const elapsed = Math.min(time - last, 50); last = time; if (!document.hidden) setRot(r => ({ ...r, y: r.y + elapsed * .008 })); frame = requestAnimationFrame(tick); };
+    frame = requestAnimationFrame(tick); return () => cancelAnimationFrame(frame);
+  }, [config.autoSpin, config.simple, dragging, reduced]);
+  const reset = (): void => { setRot({ x: -7, y: -18 }); setZoom(1); };
+  const front = config.simple && ((rot.y % 360 + 360) % 360 > 90 && (rot.y % 360 + 360) % 360 < 270) ? false : true;
+  return <div className={className}><div className={`slab-stage slab-stage-${config.environment} relative flex h-[480px] touch-pan-y items-center justify-center overflow-hidden rounded-3xl border sm:h-[550px]`}>
+    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_25%,rgba(255,255,255,.8),transparent_65%)]"/>
+    <div className="absolute bottom-14 h-8 w-48 rounded-[50%] bg-slate-900/15 blur-xl"/>
+    <div role="img" aria-label={`${card.name} display slab, ${grade ?? 'ungraded'}. Drag to rotate or use the flip button.`} className="slab-object relative h-[380px] w-[248px] touch-none select-none" style={{ transform: `scale(${zoom}) rotateX(${config.simple ? 0 : rot.x}deg) rotateY(${config.simple ? 0 : rot.y}deg)`, transition: dragging ? 'none' : 'transform 120ms linear', '--foil-opacity': config.holo / 100, '--light-tint': config.lightTint } as React.CSSProperties}
+      onPointerDown={e => { drag.current = { x: e.clientX, y: e.clientY }; setDragging(true); e.currentTarget.setPointerCapture(e.pointerId); }} onPointerMove={e => { if (!drag.current || config.simple) return; const dx = e.clientX - drag.current.x; const dy = e.clientY - drag.current.y; drag.current = { x: e.clientX, y: e.clientY }; setRot(r => ({ x: Math.max(-45, Math.min(45, r.x - dy * .35)), y: r.y + dx * .5 })); }} onPointerUp={() => { drag.current = null; setDragging(false); }} onPointerCancel={() => { drag.current = null; setDragging(false); }}>
+      {!config.simple && [0, 3, 6, 9, 12].map(depth => <div key={depth} className="slab-edge absolute inset-0 rounded-[22px]" style={{ transform: `translateZ(${-depth}px)` }}/ >)}
+      <div className={`slab-face slab-front absolute inset-0 rounded-[22px] p-3 ${config.simple && !front ? 'hidden' : ''}`}>
+        <div className={`slab-label slab-label-${config.labelStyle} relative flex h-[70px] gap-2 overflow-hidden rounded-lg border p-2`}>
+          <img src="/vca-label.png" alt="VCA brand artwork" draggable={false} className="h-full w-6 shrink-0 object-contain"/>
+          <div className="relative z-10 min-w-0 flex-1"><p className="text-[9px] font-black tracking-[.22em] text-blue-950">VERIFIED CARD AUTHORITY</p><p className="mt-1 truncate text-[11px] font-bold text-slate-900">{card.name}</p><p className="truncate text-[8px] text-slate-600">{card.set} · {card.number}</p><p className="mt-1 truncate font-mono text-[7px] text-slate-500">{serial ?? 'DISPLAY PREVIEW · NOT CERTIFIED'}</p></div>
+          <div className="relative z-10 flex w-12 shrink-0 flex-col items-center justify-center border-l border-slate-300 pl-1"><strong className="text-[13px] font-black text-blue-950">{config.showGrade ? grade?.replace('VCA ', '') ?? 'RAW' : '—'}</strong><span className="text-[6px] font-bold text-slate-600">{grade ? 'VCA GRADE' : 'UNGRADED'}</span></div><div className="slab-foil pointer-events-none absolute inset-0"/>
         </div>
-
-        {/* HUD */}
-        <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-1.5 font-mono text-[9px] text-white/35">
-          <RotateCcw className="h-3 w-3" /> drag to rotate · dbl-tap to reset
-        </div>
-        <div className="pointer-events-none absolute bottom-3 right-3 flex items-center gap-1.5 font-mono text-[9px] text-white/35">
-          <ZoomIn className="h-3 w-3" /> {Math.round(zoom * 100)}%
-        </div>
+        <div className="slab-recess relative mt-3 flex h-[268px] items-center justify-center overflow-hidden rounded-xl p-2"><img src={frontPhoto || card.artUrl} alt={card.name} draggable={false} className="h-full max-w-full rounded-lg object-contain" style={{ transform: `translateY(${config.cardOffset}px)` }}/><div className="slab-foil pointer-events-none absolute inset-0 mix-blend-soft-light"/></div>
+        <div className="slab-reflection pointer-events-none absolute inset-0 rounded-[22px]"/>
       </div>
-
-      {/* zoom slider */}
-      <div className="mt-3 flex items-center gap-3 px-1">
-        <span className="font-mono text-[9px] uppercase tracking-wider text-white/40">zoom</span>
-        <input
-          type="range"
-          min={60}
-          max={160}
-          value={Math.round(zoom * 100)}
-          onChange={(e) => setZoom(Number(e.target.value) / 100)}
-          className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-holo-cyan"
-        />
+      <div className={`slab-face slab-back absolute inset-0 flex flex-col items-center justify-center rounded-[22px] p-5 ${config.simple && front ? 'hidden' : ''}`} style={config.simple ? { transform: 'none' } : undefined}>
+        {backPhoto ? <img src={backPhoto} alt="Your card back" draggable={false} className="max-h-[280px] w-full rounded-xl object-contain"/> : <><img src="/vca-label.png" alt="Original VCA brand artwork" draggable={false} className="h-52 w-28 object-contain"/><p className="mt-4 text-center text-[9px] font-bold uppercase tracking-widest text-blue-950">Original brand artwork<br/><span className="text-[8px] font-normal">Not the grade of this specimen</span></p></>}
+        <p className="mt-4 max-w-full break-all text-center font-mono text-[8px] text-slate-600">{serial ?? 'DISPLAY ONLY · NO CERTIFICATE'}</p><div className="slab-reflection pointer-events-none absolute inset-0 rounded-[22px]"/>
       </div>
-    </div>
-  );
+    </div><p className="absolute bottom-4 text-center font-mono text-[10px] uppercase tracking-[.16em] text-slate-500">{config.simple ? 'Simple display' : 'Drag the holder to explore'} · {Math.round(zoom * 100)}%</p>
+  </div><div className="mt-4 flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => setRot(r => ({ x: r.x, y: r.y + 180 }))}><FlipHorizontal2 className="mr-2 h-4 w-4"/>Flip</Button><Button variant="outline" size="sm" onClick={reset}><RotateCcw className="mr-2 h-4 w-4"/>Reset</Button><label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground"><ZoomIn className="h-4 w-4"/><input aria-label="Slab zoom" type="range" className="w-20 accent-blue-700 sm:w-32" min={65} max={125} value={zoom * 100} onChange={e => setZoom(Number(e.target.value) / 100)}/></label></div></div>;
 }

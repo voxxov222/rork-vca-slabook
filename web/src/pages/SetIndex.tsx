@@ -13,7 +13,7 @@ const METRIC_META: Record<SetSortKey, { label: string; max: number; format: (n: 
   rarity: { label: "RARE-CARD CONCENTRATION", max: 100, format: (n) => `${n}`, bar: "from-holo-violet to-holo-cyan" },
   demand: { label: "COLLECTOR DEMAND", max: 100, format: (n) => `${n}`, bar: "from-holo-magenta to-holo-gold" },
   rating: { label: "VCA RATING", max: 10, format: (n) => n.toFixed(1), bar: "from-holo-cyan to-holo-mint" },
-  value: { label: "AVG TOP-5 VCA-10 VALUE", max: 9500, format: usd, bar: "from-holo-gold to-holo-violet" },
+  value: { label: "ILLUSTRATIVE TOP-5 VALUE", max: 9500, format: usd, bar: "from-holo-gold to-holo-violet" },
 };
 
 export default function SetIndex() {
@@ -39,8 +39,7 @@ export default function SetIndex() {
           </p>
           <h1 className="mt-2 font-display text-2xl font-extrabold text-white sm:text-3xl">Pokémon Set Intelligence</h1>
           <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-white/55">
-            {SET_INDEX.length} sets indexed by rare-card concentration, collector demand, rating and value — so you know
-            which sets are worth hunting before you rip packs.
+            {SET_INDEX.length} curated set references. Scores, rankings and values below are illustrative examples, not live market data or aggregated collector demand.
           </p>
           <div className="mt-4 grid grid-cols-3 gap-2.5">
             <div className="glass rounded-2xl p-3">
@@ -159,9 +158,7 @@ export default function SetIndex() {
           HOW THE INDEX WORKS
         </p>
         <p className="text-[11px] leading-relaxed text-white/45">
-          The rare-card concentration score weighs holo, ultra-rare and full-art slots against total set size. Demand
-          blends VCA scanner activity, slab requests and marketplace watch counts. All figures are the platform's own
-          aggregated index — estimates for research, not guarantees of market prices.
+          This is a curated reference library. Scores, demand, rankings and price changes are illustrative seed data; they are not based on scanner activity or marketplace watch counts. Use the scanner's confirmed product comparisons for available market quotes.
         </p>
       </div>
     </div>

@@ -1,845 +1,146 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { CATALOG, USERS, POSTS, cardById, registerCards, clearIndexedCards, userById as seedUser } from './data';
+import { useAuth } from './auth';
+import { supabase, isBackendReady } from './supabase';
+import type { CatalogCard, CollectionItem, Conversation, GradeLabel, GradingSubmission, MarketplaceAccount, Post, ProfileBlockDef, ProfileBlockKind, ProfileMediaItem, ScanHistoryRecord, ServiceTier, SlabRecord, SlabStatus, SubmissionStatus, User, VcaNotification } from './types';
+import type { SlabConfig } from '@/components/HoloSlab';
+export interface InspectionNote { notes: string; front?: string; back?: string; pins: { id: string; x: number; y: number; side: 'front' | 'back'; label: string }[]; checks: string[]; guides: { left: number; right: number; top: number; bottom: number } }
+type EditableProfile = Pick<User, 'displayName' | 'bio' | 'location' | 'favoritePokemon' | 'favoriteSet'>;
+interface Workspace { profile?: EditableProfile; cards: CatalogCard[]; collection: CollectionItem[]; slabs: SlabRecord[]; scans: ScanHistoryRecord[]; inspections: Record<string, InspectionNote>; presets: Record<string, SlabConfig>; blocks: ProfileBlockDef[]; media: ProfileMediaItem[]; posts: Post[]; marketplace: Record<string, MarketplaceAccount> }
+const empty = (): Workspace => ({ cards: [], collection: [], slabs: [], scans: [], inspections: {}, presets: {}, blocks: [{ id: 'stats', kind: 'stats' }, { id: 'featured', kind: 'featured' }, { id: 'media', kind: 'media' }], media: [], posts: [], marketplace: {} });
+const uid = (prefix: string): string => `${prefix}-${crypto.randomUUID()}`;
+interface ScanResult { cardId: string; passed: boolean; confidence: number; signals: { label: string; ok: boolean }[]; flaggedReason?: string }
+export interface SubmissionInput { cardId: string; tier: ServiceTier; declaredCondition: string; declaredValue: number; notes: string; contactEmail: string; shippingName: string; shippingAddress: string }
+interface SubmissionRow { id: string; user_id: string; card_id: string; details: SubmissionInput & { cardName: string; cardSet: string; cardArt: string; ownerName: string; inspection?: InspectionNote }; status: SubmissionStatus; final_grade: GradeLabel | null; cert_serial: string | null; created_at: string; vca_submission_events?: { status: SubmissionStatus; created_at: string; note: string }[] }
+function submissionFrom(row: SubmissionRow): GradingSubmission { return { ...row.details, id: row.id, cardId: row.card_id, userId: row.user_id, status: row.status, finalGrade: row.final_grade, certSerial: row.cert_serial, createdAt: row.created_at, events: (row.vca_submission_events ?? []).sort((a, b) => a.created_at.localeCompare(b.created_at)).map(e => ({ status: e.status, at: e.created_at, note: e.note })) }; }
 
-import {
-  CATALOG,
-  COLLECTION,
-  CONVERSATIONS,
-  CURRENT_USER_ID,
-  NOTIFICATIONS,
-  POSTS,
-  USERS,
-  cardById,
-  userById,
-} from "./data";
-import {
-  insertProfileMedia,
-  insertScanRecord,
-  deleteProfileMedia,
-  listProfileBlocks,
-  listProfileMedia,
-  listScanHistory,
-  listVaultSlabs,
-  saveProfileBlocks,
-  upsertVaultSlab,
-} from "./db";
-import { isBackendReady } from "./supabase";
-import type {
-  CatalogCard,
-  CollectionItem,
-  Comment,
-  Conversation,
-  GradeLabel,
-  GradingSubmission,
-  MarketplaceAccount,
-  Post,
-  ProfileBlockDef,
-  ProfileBlockKind,
-  ProfileMediaItem,
-  ScanHistoryRecord,
-  ServiceTier,
-  SlabRecord,
-  SlabStatus,
-  SubmissionStatus,
-  User,
-  VcaNotification,
-  VaultSlabRow,
-} from "./types";
-
-interface ScanResult {
-  cardId: string;
-  passed: boolean;
-  confidence: number;
-  signals: { label: string; ok: boolean }[];
-  flaggedReason?: string;
-}
-
-interface VcaStore {
-  users: User[];
-  currentUser: User;
-  collection: CollectionItem[];
-  posts: Post[];
-  conversations: Conversation[];
-  notifications: VcaNotification[];
-  slabs: SlabRecord[];
-  follows: Record<string, boolean>;
-  connections: Record<string, boolean>;
-  lastScan: ScanResult | null;
-  marketplace: Record<string, MarketplaceAccount>;
-  slabDraftCardId: string | null;
-  /* grading submissions */
-  submissions: GradingSubmission[];
-  createSubmission: (input: {
-    cardId: string;
-    tier: ServiceTier;
-    declaredCondition: string;
-    declaredValue: number;
-    notes: string;
-    contactEmail: string;
-    shippingName: string;
-    shippingAddress: string;
-  }) => GradingSubmission;
-  updateSubmissionStatus: (id: string, status: SubmissionStatus, note?: string) => void;
-  /** Admin OS: certify a submission — mints the cert serial + physical slab record. */
-  certifySubmission: (id: string, grade: GradeLabel) => void;
-  /* serial generation */
-  nextDigitalSerial: () => string;
-  nextPhysicalSerial: () => string;
-  /* collection */
-  addToCollection: (cardId: string, opts?: { grade?: GradeLabel | null; slab?: SlabStatus }) => string;
-  toggleFavorite: (itemId: string) => void;
-  toggleWishlistItem: (itemId: string) => void;
-  createDigitalSlab: (cardId: string, grade?: GradeLabel | null) => SlabRecord;
-  sendToGrading: (cardId: string) => SlabRecord;
-  activatePhysicalSlab: (recordId: string) => void;
-  /** Admin OS: certify a physical slab in the grading queue. */
-  gradeSlab: (recordId: string, grade: GradeLabel) => void;
-  /* social */
-  addPost: (text: string, card?: { cardId: string; serial?: string | null; grade?: GradeLabel | null; caption?: string }) => void;
-  toggleLike: (postId: string) => void;
-  toggleSave: (postId: string) => void;
-  addComment: (postId: string, text: string) => void;
-  sharePost: (postId: string) => void;
-  toggleFollow: (userId: string) => void;
-  toggleConnection: (userId: string) => void;
-  /* messaging */
-  sendMessage: (conversationId: string, text: string, cardId?: string) => void;
-  reactToMessage: (conversationId: string, messageId: string, emoji: string) => void;
-  markConversationRead: (conversationId: string) => void;
-  /* notifications */
-  markNotificationsRead: () => void;
-  pushNotification: (n: Omit<VcaNotification, "id" | "time" | "read">) => void;
-  /* scanning */
-  setLastScan: (r: ScanResult | null) => void;
-  setSlabDraftCardId: (id: string | null) => void;
-  /* marketplace */
-  connectMarketplace: (platformId: string, handle: string) => void;
-  disconnectMarketplace: (platformId: string) => void;
-  syncMarketplace: (platformId: string) => void;
-  /* profile building blocks (Supabase-backed) */
-  profileBlocks: ProfileBlockDef[];
-  profileMedia: ProfileMediaItem[];
-  scanHistory: ScanHistoryRecord[];
-  backendReady: boolean;
-  addBlock: (kind: ProfileBlockKind) => void;
-  moveBlock: (id: string, dir: -1 | 1) => void;
-  removeBlock: (id: string) => void;
-  addProfileMedia: (m: { mediaType: "image" | "link"; title: string; url: string; caption?: string | null }) => void;
-  removeProfileMedia: (id: string) => void;
-  recordScan: (r: Omit<ScanHistoryRecord, "id" | "createdAt">) => void;
-  /* helpers */
-  cardById: (id: string) => CatalogCard | undefined;
-  userById: (id: string) => User;
-  myItems: () => CollectionItem[];
-  collectionValue: () => number;
-}
-
-const VcaContext = createContext<VcaStore | null>(null);
-
-let idCounter = 100;
-const uid = (prefix: string) => `${prefix}-${idCounter++}`;
-
-const fmt = (n: number) => String(n).padStart(4, "0");
-
-const SEED_SLABS: SlabRecord[] = [
-  { id: "s1", serial: "VCA-D-26-0104", kind: "digital", cardId: "charizard-base", itemId: "i1", grade: "VCA 10", ownerName: "Todd", createdAt: "2026-09-14" },
-  { id: "s2", serial: "VCA-26-A-0001", kind: "physical", cardId: "gyarados-base", grade: "VCA 10", ownerName: "Kenji", createdAt: "2026-09-12" },
-];
-
-const DEFAULT_BLOCKS: ProfileBlockDef[] = [
-  { id: "b-stats", kind: "stats" },
-  { id: "b-featured", kind: "featured" },
-  { id: "b-media", kind: "media" },
-  { id: "b-links", kind: "links" },
-  { id: "b-activity", kind: "activity" },
-];
-
-const SUBMISSIONS_KEY = "vca-submissions";
-
-const loadSubmissions = (): GradingSubmission[] => {
-  try {
-    const raw = localStorage.getItem(SUBMISSIONS_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as GradingSubmission[]) : [];
-  } catch {
-    return [];
-  }
-};
-
-const persistSubmissions = (list: GradingSubmission[]) => {
-  try {
-    localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(list));
-  } catch {
-    // storage unavailable — session-only
-  }
-};
-
-const slabValue = (card: CatalogCard | undefined, grade: GradeLabel | null): number => {
-  if (!card) return 0;
-  if (grade === "VCA 10") return card.prices.g10;
-  if (grade === "VCA 9") return card.prices.g9;
-  if (grade === "VCA 8") return card.prices.g8;
-  return card.prices.raw;
-};
-
-export function VcaProvider({ children }: { children: ReactNode }) {
-  const [users] = useState<User[]>(USERS);
-  const [collection, setCollection] = useState<CollectionItem[]>(COLLECTION);
-  const [posts, setPosts] = useState<Post[]>(POSTS);
-  const [conversations, setConversations] = useState<Conversation[]>(CONVERSATIONS);
-  const [notifications, setNotifications] = useState<VcaNotification[]>(NOTIFICATIONS);
-  const [slabs, setSlabs] = useState<SlabRecord[]>(SEED_SLABS);
-  const [follows, setFollows] = useState<Record<string, boolean>>({ "u-guru": true, "u-bella": true });
-  const [connections, setConnections] = useState<Record<string, boolean>>({ "u-guru": true });
+function useWorkspace() {
+  const { session, isAdmin } = useAuth();
+  const owner = session?.user.id ?? 'guest';
+  const queryClient = useQueryClient();
+  const [workspace, setWorkspace] = useState<Workspace>(empty);
+  const ref = useRef<Workspace>(workspace);
+  const revision = useRef<number>(0);
+  const hydrated = useRef<boolean>(!session);
+  const alive = useRef<boolean>(true);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const [saveError, setSaveError] = useState<string>('');
+  const [notifications, setNotifications] = useState<VcaNotification[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [follows, setFollows] = useState<Record<string, boolean>>({});
+  const [connections, setConnections] = useState<Record<string, boolean>>({});
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
   const [slabDraftCardId, setSlabDraftCardId] = useState<string | null>(null);
-  const [submissions, setSubmissions] = useState<GradingSubmission[]>(loadSubmissions);
-  const submissionCounter = useMemo(() => ({ n: 0 }), []);
-  const [marketplace, setMarketplace] = useState<Record<string, MarketplaceAccount>>({
-    ebay: {
-      platformId: "ebay",
-      handle: "vca_vault_todd",
-      connectedAt: "2026-08-30",
-      listings: 14,
-      sold30d: 6,
-      revenue30d: 2340,
-      lastSynced: "2h ago",
-    },
-  });
-
-  const serialRef = useMemo(() => ({ digital: 122, physical: 2 }), []);
-
-  const currentUser = users.find((u) => u.isSelf) ?? users[0];
-
-  const nextDigitalSerial = useCallback(() => {
-    const serial = `VCA-D-26-${fmt(serialRef.digital++)}`;
-    return serial;
-  }, [serialRef]);
-
-  const nextPhysicalSerial = useCallback(() => {
-    return `VCA-26-A-${fmt(serialRef.physical++)}`;
-  }, [serialRef]);
-
-  const pushNotification = useCallback((n: Omit<VcaNotification, "id" | "time" | "read">) => {
-    setNotifications((prev) => [{ id: uid("n"), time: "now", read: false, ...n }, ...prev]);
-  }, []);
-
-  const addToCollection = useCallback(
-    (cardId: string, opts?: { grade?: GradeLabel | null; slab?: SlabStatus }) => {
-      const itemId = uid("i");
-      setCollection((prev) => [
-        {
-          id: itemId,
-          cardId,
-          ownerId: CURRENT_USER_ID,
-          addedAt: new Date().toISOString().slice(0, 10),
-          grade: opts?.grade ?? null,
-          serial: null,
-          slab: opts?.slab ?? "none",
-          favorite: false,
-          wishlist: false,
-          quantity: 1,
-        },
-        ...prev,
-      ]);
-      return itemId;
-    },
-    [],
-  );
-
-  const toggleFavorite = useCallback((itemId: string) => {
-    setCollection((prev) => prev.map((i) => (i.id === itemId ? { ...i, favorite: !i.favorite } : i)));
-  }, []);
-
-  const toggleWishlistItem = useCallback((itemId: string) => {
-    setCollection((prev) => prev.map((i) => (i.id === itemId ? { ...i, wishlist: !i.wishlist } : i)));
-  }, []);
-
-  const createDigitalSlab = useCallback(
-    (cardId: string, grade: GradeLabel | null = "VCA 10") => {
-      const serial = nextDigitalSerial();
-      const itemId = addToCollection(cardId, { grade, slab: "digital" });
-      setCollection((prev) => prev.map((i) => (i.id === itemId ? { ...i, serial } : i)));
-      const record: SlabRecord = {
-        id: uid("s"),
-        serial,
-        kind: "digital",
-        cardId,
-        itemId,
-        grade,
-        ownerName: currentUser.displayName,
-        createdAt: new Date().toISOString().slice(0, 10),
-      };
-      setSlabs((prev) => [record, ...prev]);
-      const c = cardById(cardId);
-      void upsertVaultSlab({
-        clientId: record.id,
-        serial,
-        kind: "digital",
-        cardId,
-        cardName: c?.name ?? "Unknown",
-        cardSet: c?.set ?? null,
-        cardArt: c?.artUrl ?? null,
-        grade,
-        value: slabValue(c, grade),
-        ownerName: record.ownerName,
-        mintedAt: new Date().toISOString(),
-      });
-      pushNotification({ kind: "slab", text: `Digital VCA slab ${serial} created for ${cardById(cardId)?.name ?? "card"}`, cardId });
-      return record;
-    },
-    [addToCollection, currentUser.displayName, nextDigitalSerial, pushNotification],
-  );
-
-  const sendToGrading = useCallback(
-    (cardId: string) => {
-      const serial = nextPhysicalSerial();
-      const itemId = addToCollection(cardId, { slab: "grading" });
-      const record: SlabRecord = {
-        id: uid("s"),
-        serial,
-        kind: "physical",
-        cardId,
-        itemId,
-        grade: null,
-        ownerName: currentUser.displayName,
-        createdAt: new Date().toISOString().slice(0, 10),
-      };
-      setSlabs((prev) => [record, ...prev]);
-      const gc = cardById(cardId);
-      void upsertVaultSlab({
-        clientId: record.id,
-        serial,
-        kind: "physical",
-        cardId,
-        cardName: gc?.name ?? "Unknown",
-        cardSet: gc?.set ?? null,
-        cardArt: gc?.artUrl ?? null,
-        grade: null,
-        value: 0,
-        ownerName: record.ownerName,
-        mintedAt: new Date().toISOString(),
-      });
-      pushNotification({ kind: "grade", text: `Grading submission received · ${cardById(cardId)?.name ?? "card"} · serial ${serial}`, cardId });
-      return record;
-    },
-    [addToCollection, currentUser.displayName, nextPhysicalSerial, pushNotification],
-  );
-
-  const activatePhysicalSlab = useCallback(
-    (recordId: string) => {
-      setSlabs((prev) => prev);
-      setCollection((prev) =>
-        prev.map((i) =>
-          slabs.find((s) => s.id === recordId)?.itemId === i.id
-            ? { ...i, slab: "physical", grade: (i.grade ?? "VCA 10") as GradeLabel, serial: slabs.find((s) => s.id === recordId)?.serial ?? i.serial }
-            : i,
-        ),
-      );
-      pushNotification({ kind: "nfc", text: "NFC slab activated — tap any phone to open the digital profile" });
-    },
-    [pushNotification, slabs],
-  );
-
-  /* Admin OS: certify a physical slab — sets the grade, activates the item,
-     syncs the vault table and notifies the owner. */
-  const gradeSlab = useCallback(
-    (recordId: string, grade: GradeLabel) => {
-      const record = slabs.find((s) => s.id === recordId);
-      if (!record) return;
-      setSlabs((prev) => prev.map((s) => (s.id === recordId ? { ...s, grade } : s)));
-      if (record.itemId) {
-        setCollection((prev) =>
-          prev.map((i) =>
-            i.id === record.itemId ? { ...i, grade, slab: "physical" as SlabStatus, serial: record.serial } : i,
-          ),
-        );
-      }
-      const c = cardById(record.cardId);
-      void upsertVaultSlab({
-        clientId: record.id,
-        serial: record.serial,
-        kind: "physical",
-        cardId: record.cardId,
-        cardName: c?.name ?? "Unknown",
-        cardSet: c?.set ?? null,
-        cardArt: c?.artUrl ?? null,
-        grade,
-        value: slabValue(c, grade),
-        ownerName: record.ownerName,
-        mintedAt: new Date().toISOString(),
-      });
-      pushNotification({ kind: "grade", text: `${c?.name ?? "Card"} certified ${grade} — physical NFC slab ${record.serial} activated.`, cardId: record.cardId });
-    },
-    [slabs, cardById, pushNotification],
-  );
-
-  /* ------------------------------ grading submissions ------------------------------ */
-
-  const pushSubmission = useCallback((list: GradingSubmission[]) => {
-    setSubmissions(list);
-    persistSubmissions(list);
-    return list;
-  }, []);
-
-  const createSubmission = useCallback(
-    (input: {
-      cardId: string;
-      tier: ServiceTier;
-      declaredCondition: string;
-      declaredValue: number;
-      notes: string;
-      contactEmail: string;
-      shippingName: string;
-      shippingAddress: string;
-    }) => {
-      if (submissionCounter.n === 0) {
-        // resume the counter above any existing submissions so ids stay unique
-        const highest = submissions.reduce((max, s) => {
-          const m = s.id.match(/(\d+)$/);
-          return m ? Math.max(max, parseInt(m[1], 10)) : max;
-        }, 0);
-        submissionCounter.n = highest;
-      }
-      submissionCounter.n += 1;
-      const card = cardById(input.cardId);
-      const now = new Date().toISOString();
-      const sub: GradingSubmission = {
-        id: `VCA-SUB-26-${fmt(submissionCounter.n)}`,
-        cardId: input.cardId,
-        cardName: card?.name ?? "Unknown card",
-        cardSet: card?.set ?? "—",
-        cardArt: card?.artUrl ?? "",
-        userId: CURRENT_USER_ID,
-        ownerName: currentUser.displayName,
-        tier: input.tier,
-        declaredCondition: input.declaredCondition,
-        declaredValue: input.declaredValue,
-        notes: input.notes,
-        contactEmail: input.contactEmail,
-        shippingName: input.shippingName,
-        shippingAddress: input.shippingAddress,
-        status: "SUBMITTED",
-        createdAt: now,
-        events: [{ status: "SUBMITTED", at: now, note: "Submission created — mail your card to the VCA grading facility." }],
-        finalGrade: null,
-        certSerial: null,
-      };
-      pushSubmission([sub, ...submissions]);
-      pushNotification({ kind: "grade", text: `Grading submission ${sub.id} created for ${sub.cardName}.`, cardId: sub.cardId });
-      return sub;
-    },
-    [cardById, currentUser.displayName, pushNotification, pushSubmission, submissionCounter, submissions],
-  );
-
-  const updateSubmissionStatus = useCallback(
-    (id: string, status: SubmissionStatus, note?: string) => {
-      const now = new Date().toISOString();
-      const next = submissions.map((s) =>
-        s.id === id
-          ? { ...s, status, events: [...s.events, { status, at: now, ...(note ? { note } : {}) }] }
-          : s,
-      );
-      pushSubmission(next);
-      const sub = next.find((s) => s.id === id);
-      if (sub) pushNotification({ kind: "grade", text: `${sub.id} · ${sub.cardName} → ${status}`, cardId: sub.cardId });
-    },
-    [pushNotification, pushSubmission, submissions],
-  );
-
-  const certifySubmission = useCallback(
-    (id: string, grade: GradeLabel) => {
-      const sub = submissions.find((s) => s.id === id);
-      if (!sub || sub.status === "GRADED" || sub.status === "SHIPPED") return;
-      const serial = nextPhysicalSerial();
-      const now = new Date().toISOString();
-      const next = submissions.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              status: "GRADED" as SubmissionStatus,
-              finalGrade: grade,
-              certSerial: serial,
-              events: [...s.events, { status: "GRADED" as SubmissionStatus, at: now, note: `Certified ${grade} · cert ${serial}` }],
-            }
-          : s,
-      );
-      pushSubmission(next);
-      const record: SlabRecord = {
-        id: uid("s"),
-        serial,
-        kind: "physical",
-        cardId: sub.cardId,
-        grade,
-        ownerName: sub.ownerName,
-        createdAt: now.slice(0, 10),
-      };
-      setSlabs((prev) => [record, ...prev]);
-      const c = cardById(sub.cardId);
-      void upsertVaultSlab({
-        clientId: record.id,
-        serial,
-        kind: "physical",
-        cardId: sub.cardId,
-        cardName: sub.cardName,
-        cardSet: sub.cardSet,
-        cardArt: sub.cardArt || null,
-        grade,
-        value: slabValue(c, grade),
-        ownerName: sub.ownerName,
-        mintedAt: now,
-      });
-      pushNotification({ kind: "grade", text: `${sub.cardName} certified ${grade} — cert ${serial} minted.`, cardId: sub.cardId });
-    },
-    [cardById, nextPhysicalSerial, pushNotification, pushSubmission, submissions],
-  );
-
-  const addPost = useCallback(
-    (text: string, card?: { cardId: string; serial?: string | null; grade?: GradeLabel | null; caption?: string }) => {
-      const post: Post = {
-        id: uid("p"),
-        userId: CURRENT_USER_ID,
-        time: "now",
-        text,
-        images: [],
-        card,
-        likes: 0,
-        likedByMe: false,
-        comments: [],
-        shares: 0,
-        saved: false,
-        kind: card ? "post" : "post",
-      };
-      setPosts((prev) => [post, ...prev]);
-    },
-    [],
-  );
-
-  const toggleLike = useCallback((postId: string) => {
-    setPosts((prev) =>
-      prev.map((p) => (p.id === postId ? { ...p, likedByMe: !p.likedByMe, likes: p.likes + (p.likedByMe ? -1 : 1) } : p)),
-    );
-  }, []);
-
-  const toggleSave = useCallback((postId: string) => {
-    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, saved: !p.saved } : p)));
-  }, []);
-
-  const addComment = useCallback((postId: string, text: string) => {
-    const comment: Comment = { id: uid("c"), userId: CURRENT_USER_ID, text, time: "now" };
-    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, comments: [...p.comments, comment] } : p)));
-  }, []);
-
-  const sharePost = useCallback((postId: string) => {
-    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, shares: p.shares + 1 } : p)));
-  }, []);
-
-  const toggleFollow = useCallback(
-    (userId: string) => {
-      setFollows((prev) => ({ ...prev, [userId]: !prev[userId] }));
-      pushNotification({ kind: "follower", userId, text: `You ${follows[userId] ? "unfollowed" : "followed"} ${userById(userId).displayName}` });
-    },
-    [follows, pushNotification],
-  );
-
-  const toggleConnection = useCallback(
-    (userId: string) => {
-      setConnections((prev) => ({ ...prev, [userId]: !prev[userId] }));
-    },
-    [],
-  );
-
-  const sendMessage = useCallback((conversationId: string, text: string, cardId?: string) => {
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === conversationId
-          ? { ...c, messages: [...c.messages, { id: uid("m"), fromMe: true, text, time: "now", cardId }] }
-          : c,
-      ),
-    );
-    /* simulated typing + reply */
-    const replies = [
-      "Haha that's an amazing pull 🔥",
-      "Interesting — what did the scanner say about centering?",
-      "Let me check my binder, I might have what you need.",
-      "VCA grading turnaround is fast right now, worth it.",
-      "Sending you a connection request!",
-    ];
-    window.setTimeout(() => {
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === conversationId
-            ? { ...c, messages: [...c.messages, { id: uid("m"), fromMe: false, text: replies[Math.floor(Math.random() * replies.length)], time: "now" }] }
-            : c,
-        ),
-      );
-    }, 2200);
-  }, []);
-
-  const reactToMessage = useCallback((conversationId: string, messageId: string, emoji: string) => {
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === conversationId
-          ? { ...c, messages: c.messages.map((m) => (m.id === messageId ? { ...m, reaction: m.reaction === emoji ? undefined : emoji } : m)) }
-          : c,
-      ),
-    );
-  }, []);
-
-  const markConversationRead = useCallback((conversationId: string) => {
-    setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, unread: 0 } : c)));
-  }, []);
-
-  const markNotificationsRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  }, []);
-
-  const myItems = useCallback(() => collection.filter((i) => i.ownerId === CURRENT_USER_ID), [collection]);
-
-  const collectionValue = useCallback(() => {
-    return myItems().reduce((sum, item) => {
-      const card = cardById(item.cardId);
-      if (!card) return sum;
-      if (item.grade === "VCA 10") return sum + card.prices.g10;
-      if (item.grade === "VCA 9") return sum + card.prices.g9;
-      if (item.grade === "VCA 8") return sum + card.prices.g8;
-      return sum + card.prices.raw;
-    }, 0);
-  }, [myItems]);
-
-  const connectMarketplace = useCallback(
-    (platformId: string, handle: string) => {
-      setMarketplace((prev) => ({
-        ...prev,
-        [platformId]: {
-          platformId,
-          handle,
-          connectedAt: new Date().toISOString().slice(0, 10),
-          listings: 4 + Math.floor(Math.random() * 12),
-          sold30d: Math.floor(Math.random() * 5),
-          revenue30d: 180 + Math.floor(Math.random() * 900),
-          lastSynced: "just now",
-        },
-      }));
-      pushNotification({ kind: "connection", text: `Marketplace account connected — first sync complete.` });
-    },
-    [pushNotification],
-  );
-
-  const disconnectMarketplace = useCallback((platformId: string) => {
-    setMarketplace((prev) => {
-      const next = { ...prev };
-      delete next[platformId];
-      return next;
-    });
-  }, []);
-
-  const syncMarketplace = useCallback((platformId: string) => {
-    setMarketplace((prev) => {
-      const acct = prev[platformId];
-      if (!acct) return prev;
-      return {
-        ...prev,
-        [platformId]: {
-          ...acct,
-          listings: acct.listings + Math.floor(Math.random() * 3),
-          sold30d: acct.sold30d + Math.floor(Math.random() * 3),
-          revenue30d: acct.revenue30d + Math.floor(Math.random() * 420),
-          lastSynced: "just now",
-        },
-      };
-    });
-  }, []);
-
-  /* ------------------- profile blocks / media / scans ------------------- */
-  const [profileBlocks, setProfileBlocks] = useState<ProfileBlockDef[]>(DEFAULT_BLOCKS);
-  const [profileMedia, setProfileMedia] = useState<ProfileMediaItem[]>([]);
-  const [scanHistory, setScanHistory] = useState<ScanHistoryRecord[]>([]);
-
-  /* Load the Supabase-backed workspace once; seed the slab table from the
-     local demo data on first run. */
+  const currentUser: User = { id: owner, username: session?.user.email?.split('@')[0] ?? 'guest', displayName: session?.user.user_metadata?.display_name ?? session?.user.email?.split('@')[0] ?? 'Guest collector', bio: '', location: '', favoritePokemon: '', favoriteSet: '', level: 1, joined: session?.user.created_at?.slice(0, 10) ?? '', online: Boolean(session), badges: [], stats: { cards: workspace.collection.length, graded: 0, value: 0, favorites: workspace.collection.filter(i => i.favorite).length }, avatarHue: 220, isSelf: true, ...workspace.profile };
+  const load = useQuery({ queryKey: ['workspace', owner], enabled: Boolean(session), queryFn: async () => { const { data, error } = await supabase!.from('vca_workspace').select('data,revision').eq('user_id', owner).maybeSingle(); if (error) throw new Error('Could not load your private workspace. Retry before editing.'); return data as { data: Partial<Workspace>; revision: number } | null; }, staleTime: 0, refetchOnMount: 'always', refetchOnWindowFocus: false, retry: 1 });
+  useEffect(() => { clearIndexedCards(); alive.current = true; return () => { alive.current = false; clearIndexedCards(); }; }, []);
   useEffect(() => {
-    if (!isBackendReady) return;
-    let cancelled = false;
-    (async () => {
-      const [rows, blocks, media, scans] = await Promise.all([
-        listVaultSlabs(),
-        listProfileBlocks(),
-        listProfileMedia(),
-        listScanHistory(),
-      ]);
-      if (cancelled) return;
-      if (rows.length) {
-        setSlabs((prev) => {
-          const map = new Map(prev.map((s) => [s.id, s]));
-          for (const r of rows) {
-            if (map.has(r.clientId)) continue;
-            map.set(r.clientId, {
-              id: r.clientId,
-              serial: r.serial,
-              kind: r.kind,
-              cardId: r.cardId ?? "unknown",
-              grade: (r.grade as GradeLabel | null) ?? null,
-              ownerName: r.ownerName,
-              createdAt: r.mintedAt.slice(0, 10),
-            });
-          }
-          return [...map.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-        });
-      } else {
-        for (const s of SEED_SLABS) {
-          const c = cardById(s.cardId);
-          void upsertVaultSlab({
-            clientId: s.id,
-            serial: s.serial,
-            kind: s.kind,
-            cardId: s.cardId,
-            cardName: c?.name ?? "Unknown",
-            cardSet: c?.set ?? null,
-            cardArt: c?.artUrl ?? null,
-            grade: s.grade,
-            value: slabValue(c, s.grade),
-            ownerName: s.ownerName,
-            mintedAt: new Date(`${s.createdAt}T12:00:00Z`).toISOString(),
-          });
-        }
-      }
-      if (blocks.length) setProfileBlocks(blocks);
-      if (media.length) setProfileMedia(media);
-      if (scans.length) setScanHistory(scans);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const addBlock = useCallback((kind: ProfileBlockKind) => {
-    setProfileBlocks((prev) => {
-      if (prev.length >= 8) return prev;
-      const next = [...prev, { id: `blk-${Date.now()}`, kind }];
-      void saveProfileBlocks(next);
-      return next;
+    if (!session || hydrated.current || !load.isSuccess || load.isFetching) return;
+    const next = { ...empty(), ...load.data?.data };
+    // Official grades come only from trusted submission rows, never editable JSON.
+    next.collection = next.collection.map(i => ({ ...i, ownerId: owner, grade: null }));
+    next.slabs = next.slabs.filter(s => s.kind === 'digital').map(s => ({ ...s, grade: null }));
+    next.cards = next.cards.map(c => ({ ...c, prices: { raw: Number.isFinite(c.prices?.raw) ? c.prices.raw : NaN, g8: Number.isFinite(c.prices?.g8) ? c.prices.g8 : NaN, g9: Number.isFinite(c.prices?.g9) ? c.prices.g9 : NaN, g10: Number.isFinite(c.prices?.g10) ? c.prices.g10 : NaN } }));
+    registerCards(next.cards); ref.current = next; revision.current = load.data?.revision ?? 0; setWorkspace(next); hydrated.current = true;
+  }, [load.data, load.isSuccess, load.isFetching, owner, session]);
+  const saving = useMutation({ mutationFn: async (next: Workspace) => {
+    if (!session) return;
+    const result = queue.current.catch(() => undefined).then(async () => {
+      if (!alive.current) throw new Error('Session changed. Sign in again.');
+      const identity = await supabase!.auth.getUser();
+      if (identity.data.user?.id !== owner) throw new Error('Session changed. Reload your workspace.');
+      const { data, error } = await supabase!.rpc('vca_save_workspace_owned', { payload: next, expected_revision: revision.current, expected_owner: owner });
+      if (error) throw new Error(error.message.includes('another device') ? 'This workspace changed on another device. Reload to avoid overwriting it.' : 'Cloud save failed. Your changes remain in this tab. Retry before closing.');
+      revision.current = Number(data);
+      queryClient.setQueryData(['workspace', owner], { data: next, revision: revision.current });
+      if (alive.current) setSaveError('');
     });
-  }, []);
-
-  const moveBlock = useCallback((id: string, dir: -1 | 1) => {
-    setProfileBlocks((prev) => {
-      const idx = prev.findIndex((b) => b.id === id);
-      const to = idx + dir;
-      if (idx < 0 || to < 0 || to >= prev.length) return prev;
-      const next = [...prev];
-      [next[idx], next[to]] = [next[to], next[idx]];
-      void saveProfileBlocks(next);
-      return next;
-    });
-  }, []);
-
-  const removeBlock = useCallback((id: string) => {
-    setProfileBlocks((prev) => {
-      const next = prev.filter((b) => b.id !== id);
-      void saveProfileBlocks(next);
-      return next;
-    });
-  }, []);
-
-  const addProfileMedia = useCallback(
-    (m: { mediaType: "image" | "link"; title: string; url: string; caption?: string | null }) => {
-      const item: ProfileMediaItem = {
-        id: `pm-${Date.now()}`,
-        mediaType: m.mediaType,
-        title: m.title,
-        url: m.url,
-        caption: m.caption ?? null,
-      };
-      setProfileMedia((prev) => {
-        void insertProfileMedia(item, prev.length);
-        return [...prev, item];
-      });
-      pushNotification({
-        kind: "slab",
-        text: m.mediaType === "image" ? "Media uploaded to your profile gallery." : "Link added to your profile.",
-      });
-    },
-    [pushNotification],
-  );
-
-  const removeProfileMedia = useCallback((id: string) => {
-    setProfileMedia((prev) => prev.filter((m) => m.id !== id));
-    void deleteProfileMedia(id);
-  }, []);
-
-  const recordScan = useCallback((r: Omit<ScanHistoryRecord, "id" | "createdAt">) => {
-    const rec: ScanHistoryRecord = { ...r, id: `scan-${Date.now()}`, createdAt: new Date().toISOString() };
-    setScanHistory((prev) => [rec, ...prev].slice(0, 100));
-    void insertScanRecord(rec);
-  }, []);
-
-  const value: VcaStore = {
-    users,
-    currentUser,
-    collection,
-    posts,
-    conversations,
-    notifications,
-    slabs,
-    follows,
-    connections,
-    lastScan,
-    marketplace,
-    slabDraftCardId,
-    submissions,
-    createSubmission,
-    updateSubmissionStatus,
-    certifySubmission,
-    nextDigitalSerial,
-    nextPhysicalSerial,
-    addToCollection,
-    toggleFavorite,
-    toggleWishlistItem,
-    createDigitalSlab,
-    sendToGrading,
-    activatePhysicalSlab,
-    gradeSlab,
-    addPost,
-    toggleLike,
-    toggleSave,
-    addComment,
-    sharePost,
-    toggleFollow,
-    toggleConnection,
-    sendMessage,
-    reactToMessage,
-    markConversationRead,
-    markNotificationsRead,
-    pushNotification,
-    setLastScan,
-    setSlabDraftCardId,
-    connectMarketplace,
-    disconnectMarketplace,
-    syncMarketplace,
-    profileBlocks,
-    profileMedia,
-    scanHistory,
-    backendReady: isBackendReady,
-    addBlock,
-    moveBlock,
-    removeBlock,
-    addProfileMedia,
-    removeProfileMedia,
-    recordScan,
-    cardById,
-    userById,
-    myItems,
-    collectionValue,
+    queue.current = result; await result;
+  }, onError: (error) => { if (alive.current) setSaveError(error.message); } });
+  const commit = useCallback(async (update: (old: Workspace) => Workspace): Promise<void> => {
+    if (!hydrated.current) throw new Error('Wait for your workspace to load, or retry loading.');
+    const next = update(ref.current); ref.current = next; setWorkspace(next);
+    await saving.mutateAsync(next);
+  }, [saving.mutateAsync]);
+  const edit = useCallback((update: (old: Workspace) => Workspace): void => { void commit(update).catch(e => toast.error(e.message)); }, [commit]);
+  const retrySave = (): void => { if (!hydrated.current) void load.refetch(); else void saving.mutateAsync(ref.current).catch(() => undefined); };
+  const pushNotification = useCallback((n: Omit<VcaNotification, 'id' | 'time' | 'read'>): void => setNotifications(old => [{ ...n, id: uid('notice'), time: 'now', read: false }, ...old]), []);
+  const saveCard = async (card: CatalogCard, photo?: string): Promise<void> => {
+    registerCards([card]);
+    await commit(old => ({ ...old, cards: [...old.cards.filter(c => c.id !== card.id), card], inspections: photo ? { ...old.inspections, [card.id]: { notes: '', pins: [], checks: [], guides: { left: 5, right: 95, top: 5, bottom: 95 }, ...old.inspections[card.id], front: photo } } : old.inspections }));
   };
-
-  return <VcaContext.Provider value={value}>{children}</VcaContext.Provider>;
+  const addToCollection = useCallback(async (cardId: string, _opts?: { grade?: GradeLabel | null; slab?: SlabStatus }): Promise<string> => {
+    const id = uid('card'); const card = cardById(cardId);
+    if (!card) throw new Error('Confirm a card first.');
+    await commit(old => ({ ...old, cards: [...old.cards.filter(c => c.id !== card.id), card], collection: [{ id, cardId, ownerId: owner, addedAt: new Date().toISOString(), grade: null, serial: null, slab: 'none', favorite: false, wishlist: false, quantity: 1 }, ...old.collection] }));
+    toast.success(session ? 'Card saved to your private collection.' : 'Card added for this session. Sign in to save across devices.'); return id;
+  }, [commit, owner, session]);
+  const createDigitalSlab = async (cardId: string, _grade: GradeLabel | null = null): Promise<SlabRecord> => {
+    const record: SlabRecord = { id: uid('slab'), serial: uid('VCA-D').toUpperCase(), kind: 'digital', cardId, grade: null, ownerName: currentUser.displayName, createdAt: new Date().toISOString() };
+    const card = cardById(cardId); if (!card) throw new Error('Select a card first.');
+    await commit(old => ({ ...old, cards: [...old.cards.filter(c => c.id !== card.id), card], slabs: [record, ...old.slabs] })); return record;
+  };
+  const submissionsQuery = useQuery({ queryKey: ['submissions', owner, isAdmin], enabled: Boolean(session), queryFn: async () => { const { data, error } = await supabase!.from('vca_submissions').select('*,vca_submission_events(*)').order('created_at', { ascending: false }); if (error) throw new Error('Could not load grading requests.'); return (data as SubmissionRow[]).map(submissionFrom); }, staleTime: 15000 });
+  const submissions = submissionsQuery.data ?? [];
+  const submissionMutation = useMutation({ mutationFn: async (input: SubmissionInput): Promise<GradingSubmission> => {
+    if (!session) throw new Error('Sign in before creating a grading request.');
+    if (input.tier === 'bulk') throw new Error('Bulk requests require multi-card intake and are not available here.');
+    const max = { bulk: 200, regular: 999, express: 4999, walkthrough: 100000 }[input.tier];
+    if (!Number.isFinite(input.declaredValue) || input.declaredValue <= 0 || input.declaredValue > max) throw new Error('Enter a declared value within the selected tier limit.');
+    const card = cardById(input.cardId); if (!card) throw new Error('Select a card.');
+    const details = { ...input, ownerName: currentUser.displayName, cardName: card.name, cardSet: card.set, cardArt: card.artUrl, inspection: ref.current.inspections[card.id] ?? null };
+    const { data, error } = await supabase!.from('vca_submissions').insert({ user_id: owner, card_id: card.id, details }).select('*,vca_submission_events(*)').single();
+    if (error) throw new Error('Request was not saved. Check your details and retry.'); return submissionFrom(data as SubmissionRow);
+  }, onSuccess: (sub) => { queryClient.setQueryData(['submissions', owner, isAdmin], (old: GradingSubmission[] | undefined) => [sub, ...(old ?? [])]); } });
+  const advance = useMutation({ mutationFn: async ({ id, status, grade, note }: { id: string; status: SubmissionStatus; grade?: GradeLabel; note?: string }) => {
+    const { error } = await supabase!.rpc('vca_advance_submission', { submission: id, next_status: status, grade: grade ?? null, evidence_note: note ?? '' });
+    if (error) throw new Error('Update rejected. Check your permissions, current status and inspection / shipping evidence.');
+  }, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['submissions'] }) });
+  const certified: SlabRecord[] = submissions.filter(s => s.finalGrade && s.certSerial && s.userId === owner).map(s => ({ id: s.id, serial: s.certSerial!, cardId: s.cardId, grade: s.finalGrade, kind: 'physical', ownerName: s.ownerName, createdAt: s.createdAt }));
+  const userById = (id: string): User => id === owner ? currentUser : seedUser(id);
+  const collection = useMemo<CollectionItem[]>(() => [...workspace.collection.filter(i => i.ownerId === owner).map(i => ({ ...i, grade: null })), ...submissions.filter(s => s.userId === owner && s.finalGrade && s.certSerial).map(s => ({ id: `cert-${s.id}`, cardId: s.cardId, ownerId: owner, addedAt: s.createdAt, grade: s.finalGrade, serial: s.certSerial, slab: 'physical' as const, favorite: false, wishlist: false, quantity: 1 }))], [workspace.collection, submissions, owner]);
+  const myItems = useCallback((): CollectionItem[] => collection, [collection]);
+  const disabledCertification = (): void => { toast.error('Use a submitted grading request with an authorized administrator.'); };
+  return {
+    users: [currentUser, ...USERS.filter(u => !u.isSelf)], currentUser, collection, myItems, collectionValue: (): number => 0,
+    posts: [...workspace.posts, ...POSTS], conversations, notifications, slabs: [...certified, ...workspace.slabs], follows, connections, lastScan, slabDraftCardId, marketplace: workspace.marketplace,
+    profileBlocks: workspace.blocks, profileMedia: workspace.media, scanHistory: workspace.scans, inspections: workspace.inspections, presets: workspace.presets,
+    backendReady: isBackendReady && Boolean(session), saveError: saveError || load.error?.message || '', saving: saving.isPending, workspaceReady: !session || (load.isSuccess && !load.isFetching && hydrated.current), retrySave,
+    submissions, submissionsError: submissionsQuery.error?.message ?? '', submissionPending: submissionMutation.isPending, adminPending: advance.isPending,
+    createSubmission: submissionMutation.mutateAsync,
+    updateSubmissionStatus: (id: string, status: SubmissionStatus, note?: string) => advance.mutateAsync({ id, status, note }),
+    certifySubmission: (id: string, grade: GradeLabel, note?: string) => advance.mutateAsync({ id, status: 'GRADED', grade, note }),
+    nextDigitalSerial: () => uid('VCA-D'), nextPhysicalSerial: () => 'ISSUED-BY-GRADING-SERVICE',
+    addToCollection, createDigitalSlab, sendToGrading: disabledCertification, activatePhysicalSlab: disabledCertification, gradeSlab: disabledCertification,
+    updateProfile: (profile: EditableProfile) => commit(old => ({ ...old, profile: { displayName: profile.displayName.trim().slice(0, 80) || 'Collector', bio: profile.bio.slice(0, 1000), location: profile.location.slice(0, 100), favoritePokemon: profile.favoritePokemon.slice(0, 80), favoriteSet: profile.favoriteSet.slice(0, 120) } })),
+    saveCard, saveInspection: (cardId: string, note: InspectionNote) => commit(old => ({ ...old, inspections: { ...old.inspections, [cardId]: note } })),
+    savePreset: (cardId: string, preset: SlabConfig) => commit(old => ({ ...old, presets: { ...old.presets, [cardId]: preset } })),
+    toggleFavorite: (id: string) => edit(old => ({ ...old, collection: old.collection.map(i => i.id === id ? { ...i, favorite: !i.favorite } : i) })),
+    toggleWishlistItem: (id: string) => edit(old => ({ ...old, collection: old.collection.map(i => i.id === id ? { ...i, wishlist: !i.wishlist } : i) })),
+    addPost: (text: string, card?: Post['card']) => { edit(old => ({ ...old, posts: [{ id: uid('post'), userId: owner, text, card, time: 'now', images: [], likes: 0, likedByMe: false, comments: [], shares: 0, saved: false, kind: 'post' }, ...old.posts] })); toast.info('Post added to your workspace. Public community publishing is not connected.'); },
+    toggleLike: (id: string) => edit(old => ({ ...old, posts: old.posts.map(p => p.id === id ? { ...p, likedByMe: !p.likedByMe, likes: p.likes + (p.likedByMe ? -1 : 1) } : p) })),
+    toggleSave: (id: string) => edit(old => ({ ...old, posts: old.posts.map(p => p.id === id ? { ...p, saved: !p.saved } : p) })),
+    addComment: (id: string, text: string) => edit(old => ({ ...old, posts: old.posts.map(p => p.id === id ? { ...p, comments: [...p.comments, { id: uid('comment'), userId: owner, text, time: 'now' }] } : p) })),
+    sharePost: (_id: string) => toast.info('Copy the card link to share it. Private photos remain private.'),
+    toggleFollow: (id: string) => setFollows(old => ({ ...old, [id]: !old[id] })), toggleConnection: (id: string) => setConnections(old => ({ ...old, [id]: !old[id] })),
+    sendMessage: (_id: string, _text: string, _cardId?: string) => toast.info('Direct messaging is not connected yet.'), reactToMessage: (_id: string, _message: string, _reaction: string) => undefined,
+    markConversationRead: (id: string) => setConversations(old => old.map(c => c.id === id ? { ...c, unread: 0 } : c)), markNotificationsRead: useCallback(() => setNotifications(old => old.map(n => ({ ...n, read: true }))), []), pushNotification,
+    setLastScan, setSlabDraftCardId, cardById, userById,
+    connectMarketplace: (platformId: string, handle: string) => { edit(old => ({ ...old, marketplace: { ...old.marketplace, [platformId]: { platformId, handle, connectedAt: new Date().toISOString(), listings: 0, sold30d: 0, revenue30d: 0, lastSynced: null } } })); toast.info('Handle saved. Live marketplace synchronization is not connected.'); },
+    disconnectMarketplace: (id: string) => edit(old => { const marketplace = { ...old.marketplace }; delete marketplace[id]; return { ...old, marketplace }; }), syncMarketplace: (_id: string) => toast.info('Live marketplace synchronization is not connected.'),
+    addBlock: (kind: ProfileBlockKind) => edit(old => ({ ...old, blocks: [...old.blocks, { id: uid('block'), kind }].slice(0, 8) })),
+    moveBlock: (id: string, direction: -1 | 1) => edit(old => { const blocks = [...old.blocks]; const index = blocks.findIndex(b => b.id === id); const next = index + direction; if (index >= 0 && next >= 0 && next < blocks.length) [blocks[index], blocks[next]] = [blocks[next], blocks[index]]; return { ...old, blocks }; }),
+    removeBlock: (id: string) => edit(old => ({ ...old, blocks: old.blocks.filter(b => b.id !== id) })),
+    addProfileMedia: (m: Omit<ProfileMediaItem, 'id'>) => edit(old => ({ ...old, media: [...old.media, { ...m, id: uid('media') }] })), removeProfileMedia: (id: string) => edit(old => ({ ...old, media: old.media.filter(m => m.id !== id) })),
+    recordScan: (scan: Omit<ScanHistoryRecord, 'id' | 'createdAt'>) => commit(old => ({ ...old, scans: [{ ...scan, id: uid('scan'), createdAt: new Date().toISOString() }, ...old.scans].slice(0, 100) })),
+  };
 }
-
-export function useVca(): VcaStore {
-  const ctx = useContext(VcaContext);
-  if (!ctx) throw new Error("useVca must be used within VcaProvider");
-  return ctx;
-}
-
+type VcaStore = ReturnType<typeof useWorkspace>;
+const VcaContext = createContext<VcaStore | null>(null);
+function WorkspaceProvider({ children }: { children: ReactNode }) { const value = useWorkspace(); return <VcaContext.Provider value={value}>{children}</VcaContext.Provider>; }
+/** Remounts private state on identity changes so no previous user's records flash onscreen. */
+export function VcaProvider({ children }: { children: ReactNode }) { const { session, ready } = useAuth(); if (!ready) return <div className="p-8 text-center text-muted-foreground">Opening your workspace…</div>; return <WorkspaceProvider key={session?.user.id ?? 'guest'}>{children}</WorkspaceProvider>; }
+export function useVca(): VcaStore { const state = useContext(VcaContext); if (!state) throw new Error('VcaProvider is required'); return state; }
 export { CATALOG };

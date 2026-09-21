@@ -22,7 +22,7 @@ function history(base: number, metric: number, months: string[]) {
 
 const MONTHS = ["Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"];
 const PRICE_DATE = "Sep 19, 2026";
-const SOURCE = "VCA Market Index · pokemontcg.io TCGPlayer market";
+const SOURCE = "Illustrative catalog estimate — not verified sales";
 
 interface Seed {
   id: string;
@@ -67,7 +67,7 @@ const SEEDS: Seed[] = [
   /* --------------------------- Team Rocket (2000) -------------------------- */
   { id: "dark-charizard-tr", ptcgId: "teamrocket-4", name: "Dark Charizard", pokemon: "Charizard", set: "Team Rocket", number: "4/82", rarity: "Holo Rare", year: 2000, variant: "Unlimited · Holo", type: "Fire", artKey: "ember", prices: { raw: 95, g10: 900, g9: 280, g8: 160 } },
   /* ------------------------ Darkness Ablaze (2020) ------------------------- */
-  { id: "charizard-vmax-da", ptcgId: "swsh4-20", name: "Charizard VMAX", pokemon: "Charizard", set: "Darkness Ablaze", number: "20/189", rarity: "Rare Holo VMAX", year: 2020, variant: "Holo", type: "Fire", artKey: "ember", prices: { raw: 130, g10: 480, g9: 190, g8: 120 } },
+  { id: "charizard-vmax-da", ptcgId: "swsh3-20", name: "Charizard VMAX", pokemon: "Charizard", set: "Darkness Ablaze", number: "20/189", rarity: "Rare Holo VMAX", year: 2020, variant: "Holo", type: "Fire", artKey: "ember", prices: { raw: 130, g10: 480, g9: 190, g8: 120 } },
   /* ----------------------- Champion's Path (2020) -------------------------- */
   { id: "charizard-vmax-cp", ptcgId: "swsh35-74", name: "Charizard VMAX", pokemon: "Charizard", set: "Champion's Path", number: "74/73", rarity: "Rare Holo VMAX", year: 2020, variant: "Secret · Holo", type: "Fire", artKey: "ember", prices: { raw: 340, g10: 1100, g9: 420, g8: 260 } },
   /* ----------------------- Evolving Skies (2022) --------------------------- */
@@ -75,7 +75,7 @@ const SEEDS: Seed[] = [
   { id: "umbreon-v-es", ptcgId: "swsh7-203", name: "Umbreon V", pokemon: "Umbreon", set: "Evolving Skies", number: "203/203", rarity: "Rare Holo V", year: 2022, variant: "Alt Art · Holo", type: "Darkness", artKey: "psy", prices: { raw: 320, g10: 850, g9: 380, g8: 240 } },
   /* -------------------------- Scarlet & Violet 151 -------------------------- */
   { id: "charizard-ex-151", ptcgId: "sv3pt5-199", name: "Charizard ex", pokemon: "Charizard", set: "151", number: "199/165", rarity: "Rare Holo ex", year: 2023, variant: "Special Illustration Rare", type: "Fire", artKey: "ember", prices: { raw: 90, g10: 380, g9: 150, g8: 95 } },
-  { id: "pikachu-ex-151", ptcgId: "sv3pt5-173", name: "Pikachu ex", pokemon: "Pikachu", set: "151", number: "173/165", rarity: "Rare Holo ex", year: 2023, variant: "Special Illustration Rare", type: "Electric", artKey: "volt", prices: { raw: 55, g10: 260, g9: 105, g8: 68 } },
+  { id: "pikachu-ex-151", ptcgId: "sv3pt5-173", name: "Pikachu", pokemon: "Pikachu", set: "151", number: "173/165", rarity: "Rare Holo ex", year: 2023, variant: "Special Illustration Rare", type: "Electric", artKey: "volt", prices: { raw: 55, g10: 260, g9: 105, g8: 68 } },
 ];
 
 const ART = {
@@ -107,11 +107,15 @@ export const CATALOG: CatalogCard[] = SEEDS.map((s) => ({
   prices: s.prices,
   priceDate: PRICE_DATE,
   priceSource: SOURCE,
-  history: history(s.prices.g10, 1, MONTHS),
+  history: [],
   historyMetric: "VCA 10",
 }));
 
-export const cardById = (id: string): CatalogCard | undefined => CATALOG.find((c) => c.id === id);
+const indexedCards = new Map<string, CatalogCard>();
+/** Registers confirmed records beyond the bundled catalog for all existing card views. */
+export function registerCards(cards: CatalogCard[]): void { for (const card of cards) indexedCards.set(card.id, card); }
+export function clearIndexedCards(): void { indexedCards.clear(); }
+export const cardById = (id: string): CatalogCard | undefined => indexedCards.get(id) ?? CATALOG.find((c) => c.id === id);
 
 export const USERS: User[] = [
   {

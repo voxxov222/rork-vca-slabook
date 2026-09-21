@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, BadgeCheck, Gem, Layers, MessageSquareShare, ScanLine, ShieldCheck, Sparkles } from "lucide-react";
 
 import CardArt from "@/components/CardArt";
+import PhotoInspection from '@/components/PhotoInspection';
+import { toast } from 'sonner';
 import GradeRoiPanel from "@/components/GradeRoiPanel";
 import PostCard from "@/components/PostCard";
 import PriceHistory from "@/components/PriceHistory";
@@ -65,7 +67,7 @@ export default function CardDetail() {
         <div className="space-y-4">
           <div>
             <p className="flex items-center gap-1.5 font-mono text-[10px] font-bold tracking-[0.25em] text-holo-mint">
-              <ShieldCheck className="h-3.5 w-3.5" /> AUTHENTICITY CHECK PASSED · VCA VERIFIED
+              <ShieldCheck className="h-3.5 w-3.5" /> CARD REFERENCE · PHYSICAL AUTHENTICITY NOT VERIFIED
             </p>
             <h1 className="mt-2 font-display text-2xl font-extrabold text-white sm:text-3xl">{card.name}</h1>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/50">
@@ -103,14 +105,13 @@ export default function CardDetail() {
           {/* actions */}
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             <button
-              onClick={() => addToCollection(card.id)}
+              onClick={() => void addToCollection(card.id).catch(e => toast.error(e.message))}
               className="flex flex-col items-center gap-1.5 rounded-2xl border border-holo-cyan/30 bg-holo-cyan/8 p-3 text-[10px] font-bold text-white transition-all hover:bg-holo-cyan/15 active:scale-95"
             >
               <Layers className="h-5 w-5 text-holo-cyan" /> ADD TO COLLECTION
             </button>
             <button
               onClick={() => {
-                createDigitalSlab(card.id, "VCA 10");
                 navigate(`/slab-creator?card=${card.id}`);
               }}
               className="flex flex-col items-center gap-1.5 rounded-2xl border border-holo-magenta/30 bg-holo-magenta/8 p-3 text-[10px] font-bold text-white transition-all hover:bg-holo-magenta/15 active:scale-95"
@@ -119,9 +120,7 @@ export default function CardDetail() {
             </button>
             <button
               onClick={() => {
-                sendToGrading(card.id);
-                pushNotification({ kind: "grade", text: `${card.name} submitted for VCA professional grading — physical NFC slab to follow.` });
-                navigate("/collection");
+                navigate(`/submit?card=${encodeURIComponent(card.id)}`);
               }}
               className="flex flex-col items-center gap-1.5 rounded-2xl border border-holo-gold/30 bg-holo-gold/8 p-3 text-[10px] font-bold text-white transition-all hover:bg-holo-gold/15 active:scale-95"
             >
@@ -130,7 +129,7 @@ export default function CardDetail() {
             <button
               onClick={() => {
                 setShareOpen((o) => !o);
-                setShareText(`Just pulled up ${card.name} (${card.set}) on VCA — estimated ${usd(card.prices.raw)} raw, ${usd(card.prices.g10)} at VCA 10 🔥`);
+                setShareText(`${card.name} (${card.set}, ${card.number}) — exploring this printing on VCA.`);
               }}
               className="flex flex-col items-center gap-1.5 rounded-2xl border border-white/15 bg-white/5 p-3 text-[10px] font-bold text-white/80 transition-all hover:bg-white/10 active:scale-95"
             >
@@ -166,6 +165,8 @@ export default function CardDetail() {
           )}
         </div>
       </div>
+
+      <PhotoInspection key={card.id} card={card} />
 
       {/* raw market trend — interactive 90-day chart */}
       <RawTrendChart card={card} live={livePrices ?? null} />

@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import AppShell from "@/components/AppShell";
 import { VcaProvider } from "@/lib/store";
+import { AuthProvider } from '@/lib/auth';
+import Account from './pages/Account';
 
 import CardDetail from "./pages/CardDetail";
 import AdminOS from "./pages/AdminOS";
@@ -27,7 +29,7 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <VcaProvider>
+      <AuthProvider><VcaProvider>
         <Toaster />
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
@@ -36,6 +38,7 @@ const App = () => (
             <Route path="/splash" element={<Splash />} />
             <Route element={<AppShell />}>
               <Route path="/home" element={<Index />} />
+              <Route path="/account" element={<Account />} />
               <Route path="/slabook" element={<Slabook />} />
               <Route path="/scanner" element={<Scanner />} />
               <Route path="/collection" element={<Collection />} />
@@ -54,7 +57,7 @@ const App = () => (
             </Route>
           </Routes>
         </BrowserRouter>
-      </VcaProvider>
+      </VcaProvider></AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

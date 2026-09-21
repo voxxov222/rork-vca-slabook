@@ -1,0 +1,7 @@
+import { useRef } from 'react';
+import { Link } from 'react-router-dom';
+/** The full uploaded artwork is preserved; the small wordmark remains readable. */
+export default function VcaBrand({ large = false }: { large?: boolean }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  return <Link to="/home" aria-label="VCA collector dashboard" className="group inline-flex items-center gap-3"><div ref={ref} className={`brand-emblem relative shrink-0 overflow-hidden rounded-xl bg-slate-950 ${large ? 'h-20 w-11' : 'h-12 w-7'}`} onPointerMove={e => { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !ref.current) return; const r = ref.current.getBoundingClientRect(); ref.current.style.transform = `perspective(400px) rotateY(${(e.clientX - r.left - r.width / 2) / 2}deg) rotateX(${-(e.clientY - r.top - r.height / 2) / 3}deg)`; }} onPointerLeave={() => { if (ref.current) ref.current.style.transform = ''; }}><img src="/vca-label.png" alt="" draggable={false} className="h-full w-full object-contain"/><span className="brand-sweep pointer-events-none absolute inset-0"/></div><span><span className={`block font-display font-black italic tracking-tighter text-blue-950 ${large ? 'text-4xl' : 'text-3xl'}`}>VCA<span className="text-red-600">.</span></span><span className="block text-[8px] font-bold uppercase tracking-[.15em] text-slate-500">Verified Card Authority</span></span></Link>;
+}
