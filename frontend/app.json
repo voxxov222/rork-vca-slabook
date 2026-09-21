@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "VCA Slabook",
+    "slug": "vca-slabook",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "vca",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vca.slabook",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan cards to identify and value them",
+        "NSPhotoLibraryUsageDescription": "Upload card photos to your collection"
+      }
+    },
+    "android": {
+      "package": "com.vca.slabook",
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan cards to identify and value them"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Upload card photos to your collection"
+        }
+      ],
+      "@react-native-vector-icons/material-design-icons"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
