@@ -6,6 +6,7 @@ import { useAuth } from './auth';
 import { supabase, isBackendReady } from './supabase';
 import type { CatalogCard, CollectionItem, Conversation, GradeLabel, GradingSubmission, MarketplaceAccount, Post, ProfileBlockDef, ProfileBlockKind, ProfileMediaItem, ScanHistoryRecord, ServiceTier, SlabRecord, SlabStatus, SubmissionStatus, User, VcaNotification } from './types';
 import type { SlabConfig } from '@/components/HoloSlab';
+import { assertCertSerial, nextCertSerial } from './serial';
 export interface InspectionNote { notes: string; front?: string; back?: string; pins: { id: string; x: number; y: number; side: 'front' | 'back'; label: string }[]; checks: string[]; guides: { left: number; right: number; top: number; bottom: number } }
 type EditableProfile = Pick<User, 'displayName' | 'bio' | 'location' | 'favoritePokemon' | 'favoriteSet'>;
 interface Workspace { profile?: EditableProfile; cards: CatalogCard[]; collection: CollectionItem[]; slabs: SlabRecord[]; scans: ScanHistoryRecord[]; inspections: Record<string, InspectionNote>; presets: Record<string, SlabConfig>; blocks: ProfileBlockDef[]; media: ProfileMediaItem[]; posts: Post[]; marketplace: Record<string, MarketplaceAccount> }
@@ -39,7 +40,6 @@ function useWorkspace() {
   useEffect(() => {
     if (!session || hydrated.current || !load.isSuccess || load.isFetching) return;
     const next = { ...empty(), ...load.data?.data };
-    // Official grades come only from trusted submission rows, never editable JSON.
     next.collection = next.collection.map(i => ({ ...i, ownerId: owner, grade: null }));
     next.slabs = next.slabs.filter(s => s.kind === 'digital').map(s => ({ ...s, grade: null }));
     next.cards = next.cards.map(c => ({ ...c, prices: { raw: Number.isFinite(c.prices?.raw) ? c.prices.raw : NaN, g8: Number.isFinite(c.prices?.g8) ? c.prices.g8 : NaN, g9: Number.isFinite(c.prices?.g9) ? c.prices.g9 : NaN, g10: Number.isFinite(c.prices?.g10) ? c.prices.g10 : NaN } }));
@@ -98,6 +98,14 @@ function useWorkspace() {
     const { error } = await supabase!.rpc('vca_advance_submission', { submission: id, next_status: status, grade: grade ?? null, evidence_note: note ?? '' });
     if (error) throw new Error('Update rejected. Check your permissions, current status and inspection / shipping evidence.');
   }, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['submissions'] }) });
+  const assignSerial = useMutation({ mutationFn: async ({ id, serial }: { id: string; serial: string }) => {
+    const issued = assertCertSerial(serial);
+    const taken = submissions.some(s => s.id !== id && s.certSerial === issued);
+    if (taken) throw new Error(`${issued} is already on another slab.`);
+    const { data, error } = await supabase!.rpc('vca_assign_cert_serial', { submission: id, requested: issued });
+    if (error) throw new Error(error.message.includes('schema cache') || error.message.includes('could not find') ? 'Apply backend/migrations/20260923_cert_serial.sql in Supabase, then retry.' : error.message.includes('not authorized') ? 'Administrator role required to assign a serial.' : `Could not assign ${issued}. ${error.message}`);
+    return (typeof data === 'string' && data) ? data : issued;
+  }, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['submissions'] }) });
   const certified: SlabRecord[] = submissions.filter(s => s.finalGrade && s.certSerial && s.userId === owner).map(s => ({ id: s.id, serial: s.certSerial!, cardId: s.cardId, grade: s.finalGrade, kind: 'physical', ownerName: s.ownerName, createdAt: s.createdAt }));
   const userById = (id: string): User => id === owner ? currentUser : seedUser(id);
   const collection = useMemo<CollectionItem[]>(() => [...workspace.collection.filter(i => i.ownerId === owner).map(i => ({ ...i, grade: null })), ...submissions.filter(s => s.userId === owner && s.finalGrade && s.certSerial).map(s => ({ id: `cert-${s.id}`, cardId: s.cardId, ownerId: owner, addedAt: s.createdAt, grade: s.finalGrade, serial: s.certSerial, slab: 'physical' as const, favorite: false, wishlist: false, quantity: 1 }))], [workspace.collection, submissions, owner]);
@@ -108,11 +116,17 @@ function useWorkspace() {
     posts: [...workspace.posts, ...POSTS], conversations, notifications, slabs: [...certified, ...workspace.slabs], follows, connections, lastScan, slabDraftCardId, marketplace: workspace.marketplace,
     profileBlocks: workspace.blocks, profileMedia: workspace.media, scanHistory: workspace.scans, inspections: workspace.inspections, presets: workspace.presets,
     backendReady: isBackendReady && Boolean(session), saveError: saveError || load.error?.message || '', saving: saving.isPending, workspaceReady: !session || (load.isSuccess && !load.isFetching && hydrated.current), retrySave,
-    submissions, submissionsError: submissionsQuery.error?.message ?? '', submissionPending: submissionMutation.isPending, adminPending: advance.isPending,
+    submissions, submissionsError: submissionsQuery.error?.message ?? '', submissionPending: submissionMutation.isPending, adminPending: advance.isPending || assignSerial.isPending,
     createSubmission: submissionMutation.mutateAsync,
     updateSubmissionStatus: (id: string, status: SubmissionStatus, note?: string) => advance.mutateAsync({ id, status, note }),
-    certifySubmission: (id: string, grade: GradeLabel, note?: string) => advance.mutateAsync({ id, status: 'GRADED', grade, note }),
-    nextDigitalSerial: () => uid('VCA-D'), nextPhysicalSerial: () => 'ISSUED-BY-GRADING-SERVICE',
+    certifySubmission: async (id: string, grade: GradeLabel, note?: string, serial?: string) => {
+      await advance.mutateAsync({ id, status: 'GRADED', grade, note });
+      const issued = serial && serial.trim() ? assertCertSerial(serial) : nextCertSerial(submissions.map(s => s.certSerial));
+      return assignSerial.mutateAsync({ id, serial: issued });
+    },
+    assignCertSerial: (id: string, serial: string) => assignSerial.mutateAsync({ id, serial }),
+    suggestedCertSerial: () => nextCertSerial(submissions.map(s => s.certSerial)),
+    nextDigitalSerial: () => uid('VCA-D'), nextPhysicalSerial: () => nextCertSerial(submissions.map(s => s.certSerial)),
     addToCollection, createDigitalSlab, sendToGrading: disabledCertification, activatePhysicalSlab: disabledCertification, gradeSlab: disabledCertification,
     updateProfile: (profile: EditableProfile) => commit(old => ({ ...old, profile: { displayName: profile.displayName.trim().slice(0, 80) || 'Collector', bio: profile.bio.slice(0, 1000), location: profile.location.slice(0, 100), favoritePokemon: profile.favoritePokemon.slice(0, 80), favoriteSet: profile.favoriteSet.slice(0, 120) } })),
     saveCard, saveInspection: (cardId: string, note: InspectionNote) => commit(old => ({ ...old, inspections: { ...old.inspections, [cardId]: note } })),
@@ -140,7 +154,6 @@ function useWorkspace() {
 type VcaStore = ReturnType<typeof useWorkspace>;
 const VcaContext = createContext<VcaStore | null>(null);
 function WorkspaceProvider({ children }: { children: ReactNode }) { const value = useWorkspace(); return <VcaContext.Provider value={value}>{children}</VcaContext.Provider>; }
-/** Remounts private state on identity changes so no previous user's records flash onscreen. */
 export function VcaProvider({ children }: { children: ReactNode }) { const { session, ready } = useAuth(); if (!ready) return <div className="p-8 text-center text-muted-foreground">Opening your workspace…</div>; return <WorkspaceProvider key={session?.user.id ?? 'guest'}>{children}</WorkspaceProvider>; }
 export function useVca(): VcaStore { const state = useContext(VcaContext); if (!state) throw new Error('VcaProvider is required'); return state; }
 export { CATALOG };
