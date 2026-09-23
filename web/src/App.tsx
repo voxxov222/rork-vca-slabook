@@ -22,6 +22,7 @@ import Splash from "./pages/Splash";
 import SlabCreator from "./pages/SlabCreator";
 import Slabook from "./pages/Slabook";
 import Submit from "./pages/Submit";
+import Vault from "./pages/Vault";
 import Profile from "./pages/Profile";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ const App = () => (
               <Route path="/collection" element={<Collection />} />
               <Route path="/slab-creator" element={<SlabCreator />} />
               <Route path="/submit" element={<Submit />} />
+              <Route path="/vault" element={<Vault />} />
               <Route path="/discover" element={<Discover />} />
               <Route path="/set-index" element={<SetIndex />} />
               <Route path="/marketplace" element={<Marketplace />} />
